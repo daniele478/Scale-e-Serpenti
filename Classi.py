@@ -182,6 +182,6 @@ class Partita:
             reverse = True
         )
     #Reverse=True inverte l'ordine in modo che chi ha 100 finisce a indice 0, senno' sarebbe ultimo
-    #lamba?
+    #lambda?
         self._classifica_finale = classifica
         return classifica
