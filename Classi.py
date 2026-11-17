@@ -176,7 +176,12 @@ class Partita:
         return messaggio_evento
     def calcola_classifica(self) -> list[Giocatore]:
     #Chi arriva a 100 vince, gli altri sono ordinati in base a dove si trovano
-        classifica = sorted(self._giocatori, key=self.estrai_posizione, reverse=True)
+        classifica = sorted(
+            self._giocatori,
+            key = lambda giocatore: giocatore.get_posizione(),
+            reverse = True
+        )
     #Reverse=True inverte l'ordine in modo che chi ha 100 finisce a indice 0, senno' sarebbe ultimo
+    #lamba?
         self._classifica_finale = classifica
         return classifica
