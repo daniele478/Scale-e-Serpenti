@@ -54,7 +54,7 @@ def registra_utente(username: str, password: str) -> bool:
         conn.close()
         return False 
 
-def veerifica_login(username: str, password: str) -> bool:
+def verifica_login(username: str, password: str) -> bool:
     #Verifica credenziali di accesso
     conn = connetti()
     cursor = conn.cursor()
@@ -70,9 +70,9 @@ def aggiorna_statistiche_vittoria(username: str, turni: int) -> None:
     cursor = conn.cursor()
 
     #Record attuale
-    cursor.execute('SELECT record FROM utenti WHERE username = ?', (username))
+    cursor.execute('SELECT record_turni FROM utenti WHERE username = ?', (username,))
     risultato = cursor.fetchone()
-
+    
     if risultato:
         record = risultato[0]
         #Se non ha record o se il record dev'essere aggiornato
@@ -91,7 +91,7 @@ def aggiorna_statistiche_vittoria(username: str, turni: int) -> None:
         conn.commit()
     conn.close()
 
-def aggiorna_statistiche_sconfitta(username:str, turni:int) -> None:
+def aggiorna_statistiche_sconfitta(username:str) -> None:
     #Incrementa per i giocatori che hanno perso
     conn = connetti()
     cursor = conn.cursor()
@@ -117,3 +117,27 @@ def salva_eventi(registro_eventi: List[str]) -> None:
         ''', (i, evento))
     conn.commit()
     conn.close()
+
+def ottieni_highscore() -> List[Tuple[str, int, int]]:
+    """
+    Recupera tutti gli utenti dal db ordinati per:
+    1. Maggior numero di vittorie
+    2. Minor numero di turni impiegati per vincere
+    Restituisce una lista di tuple (username, partite_giocate, partite_vinte, record_turni)
+    """
+    conn = connetti() 
+    #crea connessione tra py e db
+    cursor = conn.cursor()
+    #puntatore che viagga nel db per esguire operazioni e riporare i risultati
+    cursor.execute('''
+        SELECT username, partite_giocate, partite_vinte, record_turni
+        FROM utenti
+        ORDER BY partite_vinte DESC, COALESCE(record_turni, 999999) ASC
+    ''')
+    #l'ordine scritto in linguaggio SQL
+    #COALESCE = trasforma i valori NULL in 999999 per metterli ultimi in posizione
+
+    risultati = cursor.fetchall()
+    conn.close()
+
+    return risultati

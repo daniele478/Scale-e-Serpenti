@@ -1,2 +1,6 @@
 ﻿BUSCEMIDANIELE.pdf
 testi e regole/
+
+__pycache__/
+*.pyc
+*.db
