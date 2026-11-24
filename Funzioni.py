@@ -1,6 +1,11 @@
 from Classi import Giocatore
 import random
 def genera_tabellone() -> dict:
+    # Restituisce {casella_partenza: (casella_arrivo, tipo, colore)}.
+    # ATTENZIONE per la grafica: il colore qui e' una STRINGA
+    # ("Rossa", "Gialla", "Verde"), non una tupla RGB.
+    # Il modulo grafico dovra' avere un dizionario di traduzione
+    # stringa -> (R, G, B) per disegnare scale e serpenti.
     collegamenti = {}
     caselle_occupate = set()
     '''

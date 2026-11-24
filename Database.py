@@ -1,7 +1,14 @@
 import sqlite3
+import hashlib  #serve per creare l'hash della password
+import hmac     #serve per confrontare gli hash in modo sicuro
+import secrets  #serve per generare un salt casuale
 from typing import List, Tuple
 
 db_nome="scale_serpenti.db"
+
+#Numero di "giri" usati per creare l'hash.
+#Piu' e' alto, piu' la password e' difficile da indovinare, ma il login e' piu' lento.
+ITERAZIONI_HASH = 260000
 def connetti ():
     #Crea la connessione al db e abilita le chiavi
     conn = sqlite3.connect(db_nome)
@@ -38,6 +45,43 @@ def  crea_tabelle() -> None:
     conn.close()
 
 #GESTIONE UTENTI E LOGIN
+
+#Crea l'hash della password con un salt casuale.
+#Il risultato e' una stringa da salvare nel database al posto della password.
+def genera_hash(password: str) -> str:
+    salt = secrets.token_bytes(16)  #salt casuale di 16 byte
+    hash_password = hashlib.pbkdf2_hmac(
+        "sha256",                  #algoritmo usato
+        password.encode("utf-8"),  #password trasformata in byte
+        salt,                      #salt casuale
+        ITERAZIONI_HASH            #numero di ripetizioni
+    )
+    #Salvo algoritmo, iterazioni, salt e hash separati da "$"
+    return f"pbkdf2_sha256${ITERAZIONI_HASH}${salt.hex()}${hash_password.hex()}"
+
+#Controlla se la password inserita corrisponde all'hash salvato
+def verifica_hash(password: str, hash_salvato: str) -> bool:
+    try:
+        #Divido la stringa salvata nelle sue 4 parti
+        algoritmo, iterazioni, salt_hex, hash_hex = hash_salvato.split("$")
+
+        if algoritmo != "pbkdf2_sha256":
+            return False
+
+        #Rifaccio l'hash usando lo stesso salt e le stesse iterazioni
+        hash_password = hashlib.pbkdf2_hmac(
+            "sha256",
+            password.encode("utf-8"),
+            bytes.fromhex(salt_hex),
+            int(iterazioni)
+        )
+        #compare_digest confronta i due hash in modo sicuro
+        return hmac.compare_digest(hash_password.hex(), hash_hex)
+
+    except (ValueError, TypeError, AttributeError):
+        #Se la stringa salvata e' rovinata o nel formato sbagliato
+        return False
+
 def registra_utente(username: str, password: str) -> bool:
     conn = connetti()
     cursor = conn.cursor()
@@ -46,7 +90,7 @@ def registra_utente(username: str, password: str) -> bool:
         cursor.execute('''
         INSERT INTO utenti (username, password, partite_giocate, partite_vinte, record_turni) 
         VALUES (?,?,0,0,NULL)   
-        ''', (username, password))
+        ''', (username, genera_hash(password)))
         conn.commit()
         conn.close()
         return  True
@@ -59,11 +103,36 @@ def verifica_login(username: str, password: str) -> bool:
     conn = connetti()
     cursor = conn.cursor()
     cursor.execute('''
-        SELECT * FROM utenti WHERE username = ? AND password = ?
-    ''', (username, password))
+        SELECT password FROM utenti WHERE username = ?
+    ''', (username,))
     utente = cursor.fetchone()
+
+    #Utente non trovato
+    if utente is None:
+        conn.close()
+        return False
+
+    password_salvata = utente[0]
+
+    #Caso vecchio database: password salvata in chiaro (senza "$")
+    if "$" not in password_salvata:
+        if password == password_salvata:
+            #Aggiorno subito la riga con l'hash, cosi' la prossima volta e' protetta
+            cursor.execute(
+                'UPDATE utenti SET password = ? WHERE username = ?',
+                (genera_hash(password), username)
+            )
+            conn.commit()
+            conn.close()
+            return True
+
+        conn.close()
+        return False
+
+    #Caso normale: confronto la password inserita con l'hash salvato
+    esito = verifica_hash(password, password_salvata)
     conn.close()
-    return utente is not None
+    return esito
 
 def aggiorna_statistiche_vittoria(username: str, turni: int) -> None:
     conn = connetti()

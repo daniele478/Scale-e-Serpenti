@@ -1,6 +1,18 @@
 #Librerie
 import random
 import pygame
+
+# NOTA ARCHITETTURALE (per la futura parte grafica):
+# - Questo file contiene la LOGICA del gioco: dado, giocatori, tabellone, partita.
+# - La grafica pygame qui e' volutamente minima: c'e' solo Giocatore.disegna(),
+#   che sa disegnare una pedina su una Surface gia' creata da qualcun altro.
+# - Finestra, game loop, disegno del tabellone, dado grafico e pannelli
+#   andranno in un modulo separato (es. Grafica.py), che:
+#     1. legge lo stato con i getter (get_posizione, get_colore, is_finita, ...)
+#     2. chiama partita.esegui_turno()
+#     3. ridisegna la scena ad ogni frame
+#   In questo modo la modalita' CLI continua a funzionare senza pygame.
+
 #Creo la classe Dado
 class Dado:
     def __init__(self,facce=6):
@@ -24,7 +36,7 @@ class Giocatore:
         raggio: dimensioni pedina
         '''
         self._nome = nome
-        self._colore = colore
+        self._colore = colore      # tupla RGB (R, G, B) usata da pygame
         self._posizione = posizione
         self._raggio = raggio
         self._id = Giocatore.contatore_id  #Assegno ID corrente
@@ -60,13 +72,24 @@ class Giocatore:
     #Disegno con pygame
     def disegna(self, superficie: pygame.Surface, x: int, y: int) -> None:
         '''
-        superficie: oggetto su cui disegnare
-        x: coordinata x del centro della pedina
-        y: coordinata y del centro della pedina
+        Disegna la pedina come cerchio pieno con bordo nero.
+
+        superficie: Surface su cui disegnare (di solito lo schermo pygame)
+        x, y: coordinate in PIXEL del CENTRO della pedina, non della casella.
+              La conversione casella -> pixel non spetta a questa classe:
+              la fa il livello grafico, che conosce dimensioni e margini.
         '''
-        pygame.draw.circle(superficie, self._colore, (x,y), self._raggio)
-        pygame.draw.circle(superficie,(0,0,0), (x,y), self._raggio, width=2)
-        # (0,0,0) = nero, metto un contorno nero alla pedina per renderla visibile
+        # Primo cerchio: pieno, del colore del giocatore.
+        # pygame.draw.circle(superficie, colore, centro, raggio)
+        pygame.draw.circle(superficie, self._colore, (x, y), self._raggio)
+
+        # Secondo cerchio: solo contorno (width=2), per staccare la pedina
+        # dallo sfondo. (0,0,0) = nero.
+        pygame.draw.circle(superficie, (0, 0, 0), (x, y), self._raggio, width=2)
+
+        # Nota: qui NON si chiama pygame.display.flip().
+        # Il flip va fatto una sola volta per frame nel game loop,
+        # dopo aver disegnato tabellone, pedine, dado e pannello.
 
         #Controlli
     def vincitore(self) -> bool:
@@ -88,6 +111,11 @@ class GiocatoreBot(Giocatore):
         self._is_bot = True
 #Creo la classe Tabellone
 class Tabellone:
+    # Il Tabellone e' solo un MODELLO DATI: non conosce pixel ne' pygame.
+    # _collegamenti ha la forma:
+    #   { casella_partenza: (casella_arrivo, "scala"/"serpente", "Rossa"/...) }
+    # Il livello grafico usera' get_collegamenti() per disegnare le linee
+    # e dovra' convertire da solo ogni numero di casella in coordinate pixel.
     def __init__(self, collegamenti: dict = None):
         self._righe = 10
         self._colonne = 10
@@ -111,6 +139,11 @@ class Tabellone:
 
 #Creo la classe Partita
 class Partita:
+    # Anche Partita e' indipendente dalla grafica: non disegna nulla.
+    # Un eventuale game loop grafico deve solo:
+    #   - leggere lo stato con i getter
+    #   - chiamare esegui_turno() quando l'utente/bot lancia il dado
+    #   - ridisegnare la scena dopo ogni cambiamento
     def __init__(self, giocatori:list[Giocatore], tabellone:Tabellone, dado:Dado):
         self._giocatori = giocatori     #da 2 a 4
         self._tabellone = tabellone
@@ -120,6 +153,7 @@ class Partita:
         self._partita_finita = False
         self._registro_eventi = []
         self._classifica_finale = []
+        self._ultimo_lancio = None
 
     #GETTER
     def is_finita(self) -> bool:
@@ -130,6 +164,14 @@ class Partita:
         return self._registro_eventi
     def get_vincitore(self) -> Giocatore:
         return self._vincitore
+    def get_tabellone(self) -> Tabellone:
+        return self._tabellone
+    def get_giocatori(self) -> list[Giocatore]:
+        return self._giocatori
+    def get_dado(self) -> Dado:
+        return self._dado
+    def get_ultimo_lancio(self) -> int:
+        return self._ultimo_lancio
 
     def esegui_turno(self) -> str:
         '''
@@ -144,6 +186,7 @@ class Partita:
         #Dati inizio turno
         giocatore = self.get_giocatore_corrente()
         lancio = self._dado.lancia()
+        self._ultimo_lancio = lancio
         pos_iniziale = giocatore.get_posizione()
        
         #1.lancio e muovo

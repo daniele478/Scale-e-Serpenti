@@ -2,6 +2,8 @@ import time
 import random
 from Classi import Dado, Tabellone, Partita, GiocatoreUmano, GiocatoreBot
 from Funzioni import genera_tabellone, genera_podio
+from ReportPDF import genera_report_pdf
+from Grafica import avvia_partita_grafica
 
 from Database import(
     crea_tabelle,
@@ -157,25 +159,38 @@ def main():
         elif scelta_menu != "1":
             print("Opzione inesistente")
             continue
-
+        
         #AVVIO PARTITA
         partita = configura_partita()
+
+        modalita = ""
+        while modalita not in ["1", "2"]:
+            modalita = input("\nScegli modalita di gioco (1 = Testuale CLI, 2 = Grafica): ").strip()
+            if modalita not in ["1", "2"]:
+                print("Scelta non valida. Digita 1 o 2.")
+
         print("\nIniziano i giochi, attenzione ai serpenti!\n")
-        turni_giocati = 0
-        while not partita.is_finita():
-            giocatore = partita.get_giocatore_corrente()
-            print(f"\nTurno di {giocatore.get_nome()} (Casella attuale: {giocatore.get_posizione()})")
 
-            if not giocatore.is_bot():
-                input("Premi [INVIO] per sfidare la sorte...")
-            else:
-                print(f"{giocatore.get_nome()} sta tirando...")
-                time.sleep(1)
+        if modalita == "2":
+            turni_giocati = avvia_partita_grafica(partita)
+        else:
+            turni_giocati = 0
+            while not partita.is_finita():
+                giocatore = partita.get_giocatore_corrente()
+                print(f"\nTurno di {giocatore.get_nome()} (Casella attuale: {giocatore.get_posizione()})")
 
-            esito = partita.esegui_turno()
-            turni_giocati += 1
-            print(f"Esito: {esito}")
+                if not giocatore.is_bot():
+                    input("Premi [INVIO] per sfidare la sorte...")
+                else:
+                    print(f"{giocatore.get_nome()} sta tirando...")
+                    time.sleep(1)
 
+                esito = partita.esegui_turno()
+                turni_giocati += 1
+                print(f"Esito: {esito}")
+
+        #FINE PARTITA (da qui in poi resta tutto identico!)
+        classifica = partita.calcola_classifica()
         #FINE PARTITA
         classifica = partita.calcola_classifica()
         print(genera_podio(classifica))
@@ -191,6 +206,10 @@ def main():
         registro = partita.get_registro_eventi()
         salva_eventi(registro)
         print("\nDb Aggiornato: Applausi per il vincitore!!")
+
+        #Esportazione report PDF di fine partita
+        percorso_pdf = genera_report_pdf(classifica, registro, turni_giocati)
+        print(f"\nReport PDF salvato in: {percorso_pdf}")
 
         mostra_highscore()
 
