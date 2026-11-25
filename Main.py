@@ -1,9 +1,8 @@
 import time
 import random
 from Classi import Dado, Tabellone, Partita, GiocatoreUmano, GiocatoreBot
-from Funzioni import genera_tabellone, genera_podio
+from Funzioni import genera_podio
 from ReportPDF import genera_report_pdf
-from Grafica import avvia_partita_grafica
 
 from Database import(
     crea_tabelle,
@@ -48,6 +47,56 @@ def mostra_highscore() -> None:
             testo_record = str(record) if record is not None else "-"
             print(f"{utente:<15} | {giocate:<8} | {vinte:<8} | {testo_record:<12}")
     print("=" * 55 + "\n")
+
+def genera_collegamenti_casuali(num_scale: int = 8, num_serpenti: int = 8) -> dict[int, tuple[int, str, str]]:
+    """
+    Genera casualmente scale e serpenti garantendo l'assenza di catene 
+    (un arrivo che coincide con una partenza) e di caselle di arrivo duplicate.
+    """
+    # Dizionario finale con struttura -> { casella_partenza: (casella_arrivo, tipo, colore) }
+    collegamenti: dict[int, tuple[int, str, str]] = {}
+    
+    # Traccia tutte le caselle già usate (sia partenze che arrivi).
+    # Includiamo subito 1 (partenza dei giocatori) e 100 (vittoria) per lasciarle libere.
+    caselle_occupate: set[int] = {1, 100}
+    
+    colori = ["Rossa", "Gialla", "Verde", "Blu"]
+
+    # GENERAZIONE SCALE (salgono: partenza < arrivo)
+    scale_create = 0
+    tentativi = 0
+    # Il limite di 1000 tentativi previene un ciclo infinito se si chiedono troppe scale
+    while scale_create < num_scale and tentativi < 1000:
+        tentativi += 1
+        # La partenza arriva al massimo a 89 per lasciare spazio a una salita di almeno 5 caselle
+        partenza = random.randint(2, 89)
+        arrivo = random.randint(partenza + 5, 99)
+
+        # Il doppio controllo su caselle_occupate impedisce sia le catene che gli arrivi duplicati
+        if partenza not in caselle_occupate and arrivo not in caselle_occupate:
+            collegamenti[partenza] = (arrivo, "scala", random.choice(colori))
+            # Segniamo entrambe le estremità come non più riutilizzabili
+            caselle_occupate.add(partenza)
+            caselle_occupate.add(arrivo)
+            scale_create += 1
+
+    # GENERAZIONE SERPENTI (scendono: partenza > arrivo)
+    serpenti_creati = 0
+    tentativi = 0
+    while serpenti_creati < num_serpenti and tentativi < 1000:
+        tentativi += 1
+        # La testa del serpente parte almeno dalla 12 per garantire una discesa significativa
+        partenza = random.randint(12, 99)
+        arrivo = random.randint(2, partenza - 5)
+
+        # Stesso vincolo di unicità delle scale: nessuna sovrapposizione con elementi esistenti
+        if partenza not in caselle_occupate and arrivo not in caselle_occupate:
+            collegamenti[partenza] = (arrivo, "serpente", random.choice(colori))
+            caselle_occupate.add(partenza)
+            caselle_occupate.add(arrivo)
+            serpenti_creati += 1
+
+    return collegamenti
 
 def autentica_giocatore_umano(numero_giocatore: int, utenti_loggati: list[str]) -> str:
     """
@@ -132,7 +181,7 @@ def configura_partita() -> Partita:
         print(f"Creato automaticamente {nome_bot}.")
 
     #Inizializzazione tabellone + dado
-    dati_tabellone = genera_tabellone()
+    dati_tabellone = genera_collegamenti_casuali()
     tabellone = Tabellone(dati_tabellone)
     dado = Dado()
     return Partita(giocatori,tabellone,dado)
@@ -172,8 +221,14 @@ def main():
         print("\nIniziano i giochi, attenzione ai serpenti!\n")
 
         if modalita == "2":
-            turni_giocati = avvia_partita_grafica(partita)
-        else:
+            try:
+                from Grafica import avvia_partita_grafica
+                turni_giocati = avvia_partita_grafica(partita)
+            except ImportError:
+                print("\nErrore: libreria 'pygame' non installata. Avvio in modalita' CLI...")
+                modalita = "1"
+
+        if modalita == "1":
             turni_giocati = 0
             while not partita.is_finita():
                 giocatore = partita.get_giocatore_corrente()
@@ -197,6 +252,7 @@ def main():
             continue
 
         #FINE PARTITA
+        turni_giocati = partita.get_giri_completati()
         classifica = partita.calcola_classifica()
         print(genera_podio(classifica))
         vincitore = partita.get_vincitore()
@@ -209,13 +265,16 @@ def main():
                 else:
                     aggiorna_statistiche_sconfitta(giocatore.get_nome())
         registro = partita.get_registro_eventi()
-        salva_eventi(registro)
+        salva_eventi(registro, vincitore.get_nome(), turni_giocati)
         print("\nDb Aggiornato: Applausi per il vincitore!!")
 
-        #Esportazione report PDF di fine partita
-        percorso_pdf = genera_report_pdf(classifica, registro, turni_giocati)
-        print(f"\nReport PDF salvato in: {percorso_pdf}")
+        # Esportazione report PDF di fine partita
+        try:
+            percorso_pdf = genera_report_pdf(classifica, registro, turni_giocati)
+            print(f"\nReport PDF salvato in: {percorso_pdf}")
+        except Exception as e:
+            print(f"\nErrore durante la generazione del report PDF: {e}")
 
         mostra_highscore()
-
-main()
+if __name__ == "__main__":
+    main()

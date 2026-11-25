@@ -1,17 +1,13 @@
 #Librerie
 import random
-import pygame
-
-# NOTA ARCHITETTURALE (per la futura parte grafica):
-# - Questo file contiene la LOGICA del gioco: dado, giocatori, tabellone, partita.
-# - La grafica pygame qui e' volutamente minima: c'e' solo Giocatore.disegna(),
-#   che sa disegnare una pedina su una Surface gia' creata da qualcun altro.
-# - Finestra, game loop, disegno del tabellone, dado grafico e pannelli
-#   andranno in un modulo separato (es. Grafica.py), che:
-#     1. legge lo stato con i getter (get_posizione, get_colore, is_finita, ...)
-#     2. chiama partita.esegui_turno()
-#     3. ridisegna la scena ad ogni frame
-#   In questo modo la modalita' CLI continua a funzionare senza pygame.
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    import pygame
+else:
+    try:
+        import pygame
+    except ImportError:
+        pygame = None
 
 #Creo la classe Dado
 class Dado:
@@ -61,7 +57,6 @@ class Giocatore:
         if nuova_pos > 100:
             eccesso = nuova_pos - 100
             self._posizione = 100 - eccesso
-            print(f"{self._nome} ha superato il 100 ed e' rimbalzato alla casella {self._posizione}")
         else:
             self._posizione = nuova_pos
         return
@@ -70,7 +65,7 @@ class Giocatore:
         self._posizione = 0
 
     #Disegno con pygame
-    def disegna(self, superficie: pygame.Surface, x: int, y: int) -> None:
+    def disegna(self, superficie: "pygame.Surface", x: int, y: int) -> None:
         '''
         Disegna la pedina come cerchio pieno con bordo nero.
 
@@ -80,6 +75,8 @@ class Giocatore:
               la fa il livello grafico, che conosce dimensioni e margini.
         '''
         # Primo cerchio: pieno, del colore del giocatore.
+        if pygame is None:
+            raise RuntimeError("Pygame non e' installato")
         # pygame.draw.circle(superficie, colore, centro, raggio)
         pygame.draw.circle(superficie, self._colore, (x, y), self._raggio)
 
@@ -149,6 +146,7 @@ class Partita:
         self._tabellone = tabellone
         self._dado = dado
         self._indice_turno = 0
+        self._giri_completati = 0
         self._vincitore = None
         self._partita_finita = False
         self._registro_eventi = []
@@ -172,7 +170,9 @@ class Partita:
         return self._dado
     def get_ultimo_lancio(self) -> int:
         return self._ultimo_lancio
-
+    def get_giri_completati(self) -> int:
+        return self._giri_completati
+    
     def esegui_turno(self) -> str:
         '''
         1.lancio
@@ -183,6 +183,9 @@ class Partita:
         '''
         if self._partita_finita:
             return "la partita e'terminata"
+        #Incrementa il giro ogni volta che il turno riparte dal primo giocatore
+        if self._indice_turno == 0:
+            self._giri_completati += 1
         #Dati inizio turno
         giocatore = self.get_giocatore_corrente()
         lancio = self._dado.lancia()
@@ -192,7 +195,13 @@ class Partita:
         #1.lancio e muovo
         giocatore.muovi(lancio)
         pos_intermedia = giocatore.get_posizione()
-        messaggio_evento = f"{giocatore.get_nome()} ha tirato {lancio} (da {pos_iniziale} arriva a {pos_intermedia})"
+        if pos_iniziale + lancio > 100:
+            messaggio_evento = (
+                f"{giocatore.get_nome()} ha tirato {lancio}, supera 100 "
+                f"e rimbalza alla casella {pos_intermedia}"
+            )
+        else:
+            messaggio_evento = f"{giocatore.get_nome()} ha tirato {lancio} (da {pos_iniziale} arriva a {pos_intermedia})"
 
         #2. controllo
         trovato, pos_finale, tipo, colore = self._tabellone.valuta_casella(pos_intermedia)
