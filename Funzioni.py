@@ -49,6 +49,8 @@ def estrai_posizione(giocatore:Giocatore) -> int:
 def genera_podio(classifica: list) -> str:
     simboli = [" 🥇 Primo posto", " 🥈 Secondo posto", " 🥉 Terzo posto", " Quarto posto"]
     testo_podio = "\nClassifica Finale\n"
-    for i, giocatore in enumerate(classifica):
+    for i, giocatore in enumerate(classifica[:3]):
         testo_podio += f"{simboli[i]}: {giocatore.get_nome()} (Casella {giocatore.get_posizione()})\n"
+    if len(classifica) > 3:
+        testo_podio += "Voi altri: i serpenti vi hanno preso!\n"
     return testo_podio

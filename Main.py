@@ -189,8 +189,6 @@ def main():
                 turni_giocati += 1
                 print(f"Esito: {esito}")
 
-        #FINE PARTITA (da qui in poi resta tutto identico!)
-        classifica = partita.calcola_classifica()
         #FINE PARTITA
         classifica = partita.calcola_classifica()
         print(genera_podio(classifica))
