@@ -145,7 +145,7 @@ class Partita:
     #   - chiamare esegui_turno() quando l'utente/bot lancia il dado
     #   - ridisegnare la scena dopo ogni cambiamento
     def __init__(self, giocatori:list[Giocatore], tabellone:Tabellone, dado:Dado):
-        self._giocatori = giocatori     #da 2 a 4
+        self._giocatori = giocatori     #da 2 a 26
         self._tabellone = tabellone
         self._dado = dado
         self._indice_turno = 0

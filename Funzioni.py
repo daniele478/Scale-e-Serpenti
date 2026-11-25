@@ -45,9 +45,12 @@ def genera_tabellone() -> dict:
 def estrai_posizione(giocatore:Giocatore) -> int:
     return giocatore.get_posizione()
 
-#Funzione per il podio
+#Funzione per il podio (versione testuale usata dalla CLI)
 def genera_podio(classifica: list) -> str:
-    simboli = [" 🥇 Primo posto", " 🥈 Secondo posto", " 🥉 Terzo posto", " Quarto posto"]
+    # Solo i primi 3 salgono sul podio: gli altri non vengono nominati.
+    # (La grafica ha la sua resa con i cubi in Grafica.disegna_podio,
+    # ma la regola "top 3 + altri" deve restare identica in entrambe.)
+    simboli = [" 🥇 Primo posto", " 🥈 Secondo posto", " 🥉 Terzo posto"]
     testo_podio = "\nClassifica Finale\n"
     for i, giocatore in enumerate(classifica[:3]):
         testo_podio += f"{simboli[i]}: {giocatore.get_nome()} (Casella {giocatore.get_posizione()})\n"

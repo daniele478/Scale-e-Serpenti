@@ -409,6 +409,7 @@ def disegna_pannello(
     rect_dado: pygame.Rect,
     rect_bottone: pygame.Rect,
     pos_mouse: tuple[int, int],
+    classifica_finale: list = None,
 ): #Disegna l'intero pannello informativo sulla destra
     #SFONDO E BORDO PANNELLO
     #Disegna il rettangolo bianco di sfondo del pannello 
@@ -435,13 +436,13 @@ def disegna_pannello(
     y_curr = rect_pannello.y + 78
     #Caso A: la partita è finita -> mostra il vincitore in verde
     if stato == "FINE":
-        vincitore = partita.calcola_classifica()[0]
+        vincitore = classifica_finale[0] if classifica_finale else partita.calcola_classifica()[0]
         screen.blit(font_sub.render("PARTITA TERMINATA!", True, (40, 167, 69)), (x0, y_curr))
         screen.blit(font_sub.render(f"Vincitore: {vincitore.get_nome()}", True, COLORE_TESTO), (x0, y_curr + 24))
     #Caso B: partita in corso -> mostra pallino colorato, nome, tipologia e casella del giocatore di turno
     else:
         #Traduce in RGB il colore della pedina attuale (get_colore, non "colore")
-        colore_g = traduci_colore(estrai_colore_giocatore(giocatore_turno, default="blu"))
+        colore_g = traduci_colore(getattr(giocatore_turno, "colore", "blu"))
         #Disegna un'anteprima della sua pedina (cerchio colorato + bordo scuro) accanto al nome
         pygame.draw.circle(screen, colore_g, (x0 + 8, y_curr + 9), 8)
         pygame.draw.circle(screen, (20, 20, 20), (x0 + 8, y_curr + 9), 8, 1)
@@ -493,31 +494,9 @@ def disegna_pannello(
                 screen.blit(font_log.render(r, True, COLORE_TESTO), (x0, y_log))
                 y_log += 18
 
-def mostra_vincitore(screen: pygame.Surface, partita, rect_tabellone: pygame.Rect):
-    #Disegna un banner semi-trasparentea fine partita
-    #Crea una surface temporanea larga quanto il tabellone
-    overlay = pygame.Surface((rect_tabellone.width - 80, 130), pygame.SRCALPHA)
-    #La riempie di blu lasciando intravedere leggermente sotto
-    overlay.fill((25, 35, 45, 225))
-    #Ottiene il rettabgolo del banner  posizionando il suo centro al centro del tabellone
-    rect_ov = overlay.get_rect(center=rect_tabellone.center)
-    #Incolla il riquadro sullo schermo alle cordinate rect_ov
-    screen.blit(overlay, rect_ov)
-    #Disegna una cornice color oro
-    pygame.draw.rect(screen, (241, 196, 15), rect_ov, 3, border_radius=12)
-    #Recupera la classifica finale e prende il vincitore = primo elemento
-    vincitore = partita.calcola_classifica()[0]
-    #Preparea due font: uno per il vincitore e uno per le istruzioni
-    font_big = pygame.font.SysFont("Arial", 26, bold=True)
-    font_small = pygame.font.SysFont("Arial", 16)
-    #Crea  l'immagine del testo color oro
-    t1 = font_big.render(f"Vince {vincitore.get_nome()}!", True, (241, 196, 15))
-    #Crea l'immagine del sottotitolo che spiega come chiudere e salvare
-    t2 = font_small.render("Premi SPAZIO o clicca il pulsante per uscire", True, (255, 255, 255))
-    #Centra il titolo
-    screen.blit(t1, t1.get_rect(center=(rect_ov.centerx, rect_ov.centery - 18)))
-    #Centra il sottotitolo
-    screen.blit(t2, t2.get_rect(center=(rect_ov.centerx, rect_ov.centery + 24)))
+# NOTA: la vecchia funzione mostra_vincitore() (banner con solo "Vince X!")
+# e' stata rimossa: il podio a schermo intero di disegna_podio() la sostituisce.
+# Tenerla qui sarebbe stato codice morto e fonte di confusione.
 
 #FUNZIONE PRINCIPALE
 def avvia_partita_grafica(partita) -> int:
@@ -526,61 +505,54 @@ def avvia_partita_grafica(partita) -> int:
     ATTESA -> ANIMAZIONE_DADO -> TURNO -> FINE
     Restituisce il numero totale di turni giocati
     """
-    #INIZIALIZZAZIONE FINESTRA E RISORSE STATICHE
+    # INIZIALIZZAZIONE FINESTRA E RISORSE STATICHE
     pygame.init()
-    #Crea finestra principale
+    # Crea finestra principale
     screen = pygame.display.set_mode((LARGHEZZA_FINESTRA, ALTEZZA_FINESTRA))
-    #Imposta il titolo
+    # Imposta il titolo
     pygame.display.set_caption("Scale e Serpenti")
-    #Crea l'orologio di Pygame per mantenere costante il framerate (60 FPS)
+    # Crea l'orologio di Pygame per mantenere costante il framerate (60 FPS)
     clock = pygame.time.Clock()
-    #Disegna il tabellone una sola volta su una Surface in memoria.
-    #Partita espone il tabellone con get_tabellone() (attributo privato _tabellone):
-    #NON esiste partita.tabellone, che causava l'AttributeError.
+    # Disegna il tabellone una sola volta su una Surface in memoria.
     tabellone = estrai_tabellone(partita)
     surface_tabellone = crea_surface_tabellone(tabellone)
 
-    #DEFINIZIONE DEI RETTANGOLI DELL'INTERFACCIA
-    #Rettangolo che delimita la griglia a sinistra 
+    # DEFINIZIONE DEI RETTANGOLI DELL'INTERFACCIA
+    # Rettangolo che delimita la griglia a sinistra
     rect_tabellone = pygame.Rect(MARGINE, MARGINE, DIM_TABELLONE, DIM_TABELLONE)
-    #Coordinata X da cui inizia il pannello laterale dx
+    # Coordinata X da cui inizia il pannello laterale dx
     pannello_x = MARGINE * 2 + DIM_TABELLONE
-    #Rettangolo dell'intero pannello informativo sulla destra
+    # Rettangolo dell'intero pannello informativo sulla destra
     rect_pannello = pygame.Rect(pannello_x, MARGINE, LARGHEZZA_PANNELLO, ALTEZZA_FINESTRA - MARGINE * 2)
-    #Rettangolo del dado, centrato dentro il pannello
+    # Rettangolo del dado, centrato dentro il pannello
     rect_dado = pygame.Rect(pannello_x + (LARGHEZZA_PANNELLO - 76) // 2, MARGINE + 145, 76, 76)
-    #Rettangolo cliccabile del pulsante "Tira dado" posizionato subito sotto il dado
+    # Rettangolo cliccabile del pulsante "Tira dado" posizionato subito sotto il dado
     rect_bottone = pygame.Rect(pannello_x + 25, MARGINE + 238, LARGHEZZA_PANNELLO - 50, 44)
+    # Rettangolo cliccabile del pulsante "Continua" nella schermata finale del podio
+    rect_bottone_podio = None
 
-    #VARIABILI DELLA MACCHINA A STATI
-    #Stato iniziale: attende input
+    # VARIABILI DELLA MACCHINA A STATI
     stato = "ATTESA"
-    #Contatore dei turni eseguiti
     turni = 0
-    #Valore mostrato sulla faccia del dado prima del primo lancio
     valore_dado = 1
-    #Timestamp (in millisecondi) che segna quando finirà l'animazione del dado
     timer_animazione = 0
-    #Timestamp che dà al primo bot una pausa iniziale di 700 ms prima di tirare
     timer_bot = pygame.time.get_ticks() + 700
-    #Legge il numero di facce del dado (Dado usa get_facce()/_facce, non .facce)
+
     dado = estrai_dado(partita)
     getter_facce = getattr(dado, "get_facce", None)
     if callable(getter_facce):
         max_facce_dado = getter_facce()
     else:
         max_facce_dado = getattr(dado, "facce", getattr(dado, "_facce", 6))
-    #Flag che mantiene attivo il ciclo principale finché resta True
-    in_esecuzione = True
 
-    #GAME LOOP PRINCIPALE
+    in_esecuzione = True
+    classifica_finale = []
+
+    # GAME LOOP PRINCIPALE
     while in_esecuzione:
-        #Legge i millisecondi trascorsi dall'avvio di Pygame
         ora = pygame.time.get_ticks()
-        #Legge le coordinate (x, y) attuali del puntatore del mouse
         pos_mouse = pygame.mouse.get_pos()
-        #Recupera l'oggetto Giocatore a cui tocca muovere in questo turno:
-        #usa get_giocatore_corrente() se esiste, altrimenti calcola l'indice in modo sicuro
+
         if hasattr(partita, "get_giocatore_corrente"):
             giocatore_corrente = partita.get_giocatore_corrente()
         else:
@@ -588,107 +560,226 @@ def avvia_partita_grafica(partita) -> int:
             indice = getattr(partita, "indice_turno", getattr(partita, "_indice_turno", turni % len(elenco_giocatori)))
             giocatore_corrente = elenco_giocatori[indice]
 
-        #FASE A: GESTIONE EVENTI (TASTIERA, MOUSE, CHIUDUSRA FINESTRA)
+        # FASE A: GESTIONE EVENTI (TASTIERA, MOUSE, CHIUSURA FINESTRA)
         for event in pygame.event.get():
-            #Se l'utente clicca sulla 'X' della finestra, termina il loop
             if event.type == pygame.QUIT:
                 in_esecuzione = False
 
-            #Se viene premuto un tasto sulla tastiera
             elif event.type == pygame.KEYDOWN:
-                #Tasto ESC: chiude immediatamente la finestra grafica
                 if event.key == pygame.K_ESCAPE:
                     in_esecuzione = False
-                #Tasto SPAZIO:
                 elif event.key == pygame.K_SPACE:
-                    # Se la partita è finita, esce e torna a main.py per salvare il report
                     if stato == "FINE":
                         in_esecuzione = False
-                    #Se siamo in attesa e tocca a un umano, avvia l'animazione del dado per 600 ms
                     elif stato == "ATTESA" and not giocatore_corrente.is_bot():
                         stato = "ANIMAZIONE_DADO"
                         timer_animazione = ora + 600
 
-            #Se viene premuto il tasto sinistro del mouse (button == 1)
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                #Controlla se il clic è avvenuto dentro l'area del pulsante
-                if rect_bottone.collidepoint(pos_mouse):
-                    if stato == "FINE":
+                if stato == "FINE":
+                    if rect_bottone_podio and rect_bottone_podio.collidepoint(pos_mouse):
                         in_esecuzione = False
-                    elif stato == "ATTESA" and not giocatore_corrente.is_bot():
+                elif rect_bottone.collidepoint(pos_mouse):
+                    if stato == "ATTESA" and not giocatore_corrente.is_bot():
                         stato = "ANIMAZIONE_DADO"
                         timer_animazione = ora + 600
-        #FASE B: LOGICA DELLA MACCHINA A STATI
+
+        # FASE B: LOGICA DELLA MACCHINA A STATI
         if stato == "ATTESA":
-            #Controlla se la partita risulta già conclusa
             if partita.is_finita():
                 stato = "FINE"
-            #Se tocca a un Bot ed è scaduto il suo tempo di attesa, avvia il lancio automatico
+                classifica_finale = partita.calcola_classifica()
             elif giocatore_corrente.is_bot() and ora >= timer_bot:
                 stato = "ANIMAZIONE_DADO"
                 timer_animazione = ora + 600
 
         elif stato == "ANIMAZIONE_DADO":
-            #Finché non sono trascorsi i 600 ms, mostra numeri casuali sul dado per simulare il rotolamento
             if ora < timer_animazione:
                 valore_dado = random.randint(1, max_facce_dado)
-            #Scaduto il timer dell'animazione, passa allo stato che esegue la mossa reale
             else:
                 stato = "TURNO"
 
         elif stato == "TURNO":
-            #Esegue la logica completa del turno (lancio, movimento, scale/serpenti)
             partita.esegui_turno()
             turni += 1
 
-            #Se la classe Partita salva l'ultimo numero uscito, aggiorna la faccia del dado grafico
             if hasattr(partita, "ultimo_lancio"):
                 valore_dado = partita.ultimo_lancio
             elif hasattr(partita, "get_ultimo_lancio"):
                 valore_dado = partita.get_ultimo_lancio()
 
-            #Verifica se questo turno ha portato un giocatore alla casella 100
             if partita.is_finita():
                 stato = "FINE"
+                classifica_finale = partita.calcola_classifica()
             else:
-                #Altrimenti torna in attesa e imposta un ritardo di 750 ms caso mai il prossimo sia un Bot
                 stato = "ATTESA"
                 timer_bot = ora + 750
 
-        #FASE C: DISEGNO DI TUTTI GLI ELEMENTI SULLO SCHERMO
-        #Incolla l'immagine pre-renderizzata del tabellone
-        screen.blit(surface_tabellone, (0, 0))
-        
-        #Disegna tutte le pedine nelle loro posizioni aggiornate
-        disegna_pedine(screen, partita)
-        
-        #Disegna il pannello laterale destro (turno, dado, bottone, ultimi 6 eventi)
-        disegna_pannello(
-            screen,
-            partita,
-            giocatore_corrente,
-            turni,
-            valore_dado,
-            stato,
-            rect_pannello,
-            rect_dado,
-            rect_bottone,
-            pos_mouse,
-        )
-
-        #Se la partita è terminata, sovrappone il banner dorato con il nome del vincitore
+        # FASE C: DISEGNO DI TUTTI GLI ELEMENTI SULLO SCHERMO
         if stato == "FINE":
-            mostra_vincitore(screen, partita, rect_tabellone)
+            # Pulisce lo schermo e mostra solo il podio finale (aggiornando il pulsante cliccabile)
+            screen.fill(COLORE_SFONDO)
+            rect_bottone_podio = disegna_podio(
+                screen,
+                classifica_finale,
+                LARGHEZZA_FINESTRA,
+                ALTEZZA_FINESTRA,
+            )
+        else:
+            # Incolla l'immagine pre-renderizzata del tabellone
+            screen.blit(surface_tabellone, (0, 0))
 
-        #Aggiorna fisicamente la finestra mostrando tutto ciò che è stato disegnato in questo frame
+            # Disegna tutte le pedine nelle loro posizioni aggiornate
+            disegna_pedine(screen, partita)
+
+            # Disegna il pannello laterale destro
+            disegna_pannello(
+                screen,
+                partita,
+                giocatore_corrente,
+                turni,
+                valore_dado,
+                stato,
+                rect_pannello,
+                rect_dado,
+                rect_bottone,
+                pos_mouse,
+            )
+
+        # Aggiorna fisicamente la finestra in OGNI stato (anche quando stato == "FINE")
         pygame.display.flip()
-        
-        #Mette in pausa il ciclo quanto basta per non superare i 60 fotogrammi al secondo
+
+        # Mette in pausa il ciclo quanto basta per non superare i 60 FPS
         clock.tick(FPS)
 
-    #CHIUSURA PULITA E RITORNO A MAIN.PY
-    #Chiude la finestra grafica e libera le risorse di Pygame
+    # CHIUSURA PULITA E RITORNO A MAIN.PY
     pygame.quit()
-    
-    #Restituisce il numero totale di turni a main.py per generare classifica, PDF e High Score
+
+    # Restituisce il numero totale di turni a main.py per generare classifica, PDF e High Score
     return turni
+
+def disegna_podio(
+    screen: pygame.Surface,
+    classifica: list,
+    larghezza_finestra: int,
+    altezza_finestra: int,
+):
+    # Disegna la schermata del podio finale (top 3 + eventuale riga "altri") centrata nella finestra.
+    # Restituisce il rettangolo del pulsante "Continua", che il game loop usa per il click del mouse.
+    if not classifica:
+        # Caso limite: nessun giocatore. Non c'e' nulla da disegnare ne' un pulsante da cliccare.
+        return None
+
+    # Font in stile coerente con il resto del file (Arial): "Helvetica" non e'
+    # detto che esista su Windows e pygame ripiegherebbe su un font generico.
+    font_titolo = pygame.font.SysFont("Arial", 32, bold=True)
+    font_medaglia = pygame.font.SysFont("Arial", 24, bold=True)
+    font_info = pygame.font.SysFont("Arial", 15)
+
+    # Titolo in alto
+    t_titolo = font_titolo.render("CLASSIFICA FINALE", True, COLORE_TESTO)
+    screen.blit(t_titolo, t_titolo.get_rect(center=(larghezza_finestra // 2, 55)))
+
+    # Definizione dei 3 cubi in ordine [2° posto, 1° posto, 3° posto]
+    larghezza_cubo = 180
+    spazio_tra_cubi = 16
+    altezze = [160, 220, 160]  # 2° (sinistra), 1° (centro, più alto), 3° (destra)
+
+    y_base = altezza_finestra - 110
+    larghezza_totale = larghezza_cubo * 3 + spazio_tra_cubi * 2
+    x_inizio = (larghezza_finestra - larghezza_totale) // 2
+
+    cubi_podio = [
+        pygame.Rect(x_inizio, y_base - altezze[0], larghezza_cubo, altezze[0]),                                         # 2° posto (sinistra)
+        pygame.Rect(x_inizio + larghezza_cubo + spazio_tra_cubi, y_base - altezze[1], larghezza_cubo, altezze[1]),       # 1° posto (centro)
+        pygame.Rect(x_inizio + (larghezza_cubo + spazio_tra_cubi) * 2, y_base - altezze[2], larghezza_cubo, altezze[2]), # 3° posto (destra)
+    ]
+
+    # Colori dei cubi (base per 2° e 3°, crema chiaro per il 1° così risalta la medaglia oro)
+    colore_base = (210, 220, 230)
+    colore_primo = (255, 245, 200)
+    colori_cubo = [colore_base, colore_primo, colore_base]
+
+    colori_medaglia = [
+        (190, 190, 190),  # Argento 2°
+        (241, 196, 15),   # Oro 1°
+        (205, 127, 50),   # Bronzo 3°
+    ]
+    numeri_medaglia = ["2", "1", "3"]
+    indici_classifica = [1, 0, 2]  # Mappa ciascun cubo al corrispondente giocatore in classifica
+
+    # Disegna i gradini in ordine 2°, 1°, 3°
+    for idx_cubo, idx_class in enumerate(indici_classifica):
+        if idx_class >= len(classifica):
+            continue  # Gestisce il caso con soli 2 giocatori
+
+        rect = cubi_podio[idx_cubo]
+        giocatore = classifica[idx_class]
+
+        # Cubo del podio
+        pygame.draw.rect(screen, colori_cubo[idx_cubo], rect, border_top_left_radius=10, border_top_right_radius=10)
+        pygame.draw.rect(screen, COLORE_BORDO, rect, 2, border_top_left_radius=10, border_top_right_radius=10)
+
+        # Cerchio medaglia al centro del cubo + bordo + numero
+        centro_medaglia = (rect.centerx, rect.centery - 12)
+        raggio_medaglia = 30
+        pygame.draw.circle(screen, colori_medaglia[idx_cubo], centro_medaglia, raggio_medaglia)
+        pygame.draw.circle(screen, (40, 40, 40), centro_medaglia, raggio_medaglia, 3)
+
+        surf_num = font_medaglia.render(numeri_medaglia[idx_cubo], True, (30, 30, 30))
+        screen.blit(surf_num, surf_num.get_rect(center=centro_medaglia))
+
+        # Casella raggiunta in basso dentro il cubo
+        surf_cas = font_info.render(f"Casella {giocatore.get_posizione()}", True, (40, 40, 40))
+        screen.blit(surf_cas, surf_cas.get_rect(center=(rect.centerx, rect.bottom - 24)))
+
+        #Nome giocatore centrato sopra il bordo superiore del cubo + gestione nomi lunghi
+        nome = giocatore.get_nome()
+        larghezza_max = larghezza_cubo - 12  # Margine laterale di sicurezza
+
+        # 1) Prova a ridurre il font se il nome è troppo largo
+        dim_font = 18
+        font_nome = pygame.font.SysFont("Arial", dim_font, bold=True)
+        while font_nome.size(nome)[0] > larghezza_max and dim_font > 13:
+            dim_font -= 1
+            font_nome = pygame.font.SysFont("Arial", dim_font, bold=True)
+
+        # 2) Se supera la larghezza del cubo, tronca con "..."
+        if font_nome.size(nome)[0] > larghezza_max:
+            while len(nome) > 1 and font_nome.size(nome + "...")[0] > larghezza_max:
+                nome = nome[:-1]
+            nome += "..."
+
+        surf_nome = font_nome.render(nome, True, COLORE_TESTO)
+        screen.blit(surf_nome, surf_nome.get_rect(center=(rect.centerx, rect.top - 18)))
+
+        # Pedina del giocatore subito sopra il nome.
+        # ATTENZIONE: Giocatore non ha un attributo pubblico "colore" (il campo
+        # interno e' _colore e si legge con get_colore()). Usare getattr(..., "colore")
+        # faceva cadere sempre sul default "blu", rendendo tutte le pedine blu.
+        colore_g = traduci_colore(estrai_colore_giocatore(giocatore, default="blu"))
+        pygame.draw.circle(screen, colore_g, (rect.centerx, rect.top - 48), 16)
+        pygame.draw.circle(screen, (20, 20, 20), (rect.centerx, rect.top - 48), 16, 2)
+
+    # Eventuale riga "Voi altri" sotto la base del podio.
+    # Uso un font dedicato piu' grande e in grassetto (rispetto a font_info,
+    # usato per i testi secondari come "Casella N") per dare risalto alla frase.
+    font_altri = pygame.font.SysFont("Arial", 22, bold=True)
+    y_footer = y_base + 24
+    if len(classifica) > 3:
+        surf_altri = font_altri.render("Voi altri: i serpenti vi hanno preso", True, COLORE_TESTO_TENUE)
+        screen.blit(surf_altri, surf_altri.get_rect(center=(larghezza_finestra // 2, y_footer)))
+        # Spazio extra per non far sovrapporre il testo (piu' alto) al pulsante sottostante
+        y_footer += 30
+    # Istruzione di chiusura
+    rect_bottone_podio = pygame.Rect(0, 0, 220, 44)
+    rect_bottone_podio.center = (larghezza_finestra // 2, y_footer + 18)
+
+    pygame.draw.rect(screen, COLORE_BOTTONE, rect_bottone_podio, border_radius=8)
+    pygame.draw.rect(screen, COLORE_BORDO, rect_bottone_podio, 2, border_radius=8)
+
+    font_btn = pygame.font.SysFont("Arial", 18, bold=True)
+    t_btn = font_btn.render("Continua", True, (255, 255, 255))
+    screen.blit(t_btn, t_btn.get_rect(center=rect_bottone_podio.center))
+
+    return rect_bottone_podio

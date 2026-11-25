@@ -189,6 +189,13 @@ def main():
                 turni_giocati += 1
                 print(f"Esito: {esito}")
 
+        # Se in modalita' grafica l'utente chiude la finestra o preme ESC prima
+        # che qualcuno arrivi a 100, la partita non e' finita: non registriamo
+        # statistiche ne' generiamo un PDF per una partita incompleta.
+        if not partita.is_finita():
+            print("\nPartita interrotta prima del termine: nessun report generato.")
+            continue
+
         #FINE PARTITA
         classifica = partita.calcola_classifica()
         print(genera_podio(classifica))
