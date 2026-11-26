@@ -31,7 +31,7 @@ def pulisci_testo(testo) -> str:
     return testo.encode("latin-1", "ignore").decode("latin-1")          #setaccia la parola e toglie il carattere. [c][i][t][t][a]['] -> butta '
                                                                         #ignore elimina emoji e simboli non supportati
 
-def genera_report_pdf(classifica: list, registro_eventi: list[str], turni_totali: int) -> str:
+def genera_report_pdf(classifica: list, registro_eventi: list[str], giri_totali: int) -> str:
     """
     Genera il report PDF di fine partita. 
     Restituisce il percorso assoluto del file salvato.
@@ -61,7 +61,7 @@ def genera_report_pdf(classifica: list, registro_eventi: list[str], turni_totali
     pdf.set_font("Helvetica", "", 11)
     data_ora = datetime.now().strftime("%d/%m/%Y alle %H:%M")
     pdf.cell(0, 7, f"Report partita del {data_ora}", align="C", new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(0, 7, f"Turni totali giocati: {turni_totali}", align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 7, f"Giri totali giocati: {giri_totali}", align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(5)
 
     # CLASSIFICA FINALE
@@ -70,7 +70,7 @@ def genera_report_pdf(classifica: list, registro_eventi: list[str], turni_totali
     pdf.ln(2)
 
     pdf.set_font("Helvetica", "", 10)
-    stile_vincitore = FontFace(fill_color=(214, 245, 214), emphasis="BOLD") #riga verde per il 1°
+    stile_vincitore = FontFace(fill_color=(214, 245, 214), emphasis="BOLD") #riga verde per chi ha raggiunto la casella 100
     with pdf.table(
         col_widths=(25, 65, 35, 35),
         text_align="CENTER",
@@ -82,7 +82,7 @@ def genera_report_pdf(classifica: list, registro_eventi: list[str], turni_totali
             intestazione.cell(titolo)
 
         for posizione, giocatore in enumerate(classifica, start=1):
-            stile = stile_vincitore if posizione == 1 else None
+            stile = stile_vincitore if giocatore.get_posizione() == 100 else None
             riga = tabella.row()
             riga.cell(f"{posizione}°", style=stile)
             riga.cell(pulisci_testo(giocatore.get_nome()), align="LEFT", style=stile)

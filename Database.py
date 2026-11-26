@@ -3,6 +3,7 @@ import sqlite3
 import hashlib  # serve per creare l'hash della password
 import hmac     # serve per confrontare gli hash in modo sicuro
 import secrets  # serve per generare un salt casuale
+import re       # serve per verificare formato/caratteri dello username
 from datetime import datetime
 from typing import List, Tuple, Optional
 from contextlib import closing
@@ -51,6 +52,12 @@ def crea_tabelle() -> None:
             )
             '''
         )
+
+        cursor.execute("PRAGMA table_info(registro_eventi)")
+        colonne = {riga[1] for riga in cursor.fetchall()}
+        if colonne and "indice_evento" not in colonne:
+            cursor.execute("DROP TABLE registro_eventi")  
+            cursor.execute("UPDATE utenti SET record_turni = NULL")                
 
         # Tabella Registro Eventi (collegata alla singola partita tramite partita_id)
         cursor.execute(
@@ -106,56 +113,86 @@ def verifica_hash(password: str, hash_salvato: str) -> bool:
         # Se la stringa salvata e' rovinata o nel formato sbagliato
         return False
 
+USERNAME_REGEX = re.compile(r"^[a-zA-Z0-9_-]{3,16}$")   
+"""
+Regola validazione username:
+^...$           ---> controlla l'intera stringa
+[a-zA-Z0-9_-]   ---> ammette solo lettere,numeri, _, -
+{3,16}          ---> lunghezza compresa tra 3 e 16 caratteri
+"""
+
+def valida_credenziali(username: str, password: str) -> tuple[str, str]:
+    """
+    Pulisce gli spazi esterni e verifica:
+    - username: 3-16 caratteri (solo lettere, numeri, '_' o '-')
+    - password: almeno 4 caratteri, senza spazi
+    ValueError messaggio se non valide.
+    """
+    user_pulito = username.strip()
+    pass_pulita = password.strip()
+
+    if not USERNAME_REGEX.match(user_pulito):
+        raise ValueError(
+            "Username non valido: usa 3-16 caratteri (solo lettere, numeri, '_' o '-')."
+        )
+    if len(pass_pulita) < 4:
+        raise ValueError("Password non valida: deve contenere almeno 4 caratteri.")
+
+    return user_pulito, pass_pulita
 
 def registra_utente(username: str, password: str) -> bool:
+    user_pulito, pass_pulita, = valida_credenziali(username,password)
     try:
         with closing(connetti()) as conn, conn:
-            conn.execute(
+            cursor = conn.cursor() # oggetto che esegue le query SQL e legge i risultati dalla connessione
+            #"Daniele" e "daniele" sono lo stesso utente
+            cursor.execute(
+                "SELECT 1 FROM utenti WHERE LOWER(username) = LOWER(?)",
+                (user_pulito,),
+            )
+            if cursor.fetchone() is not None:
+                return False
+
+            cursor.execute(
                 '''
                 INSERT INTO utenti (username, password, partite_giocate, partite_vinte, record_turni)
                 VALUES (?, ?, 0, 0, NULL)
                 ''',
-                (username, genera_hash(password)),
+                (user_pulito, genera_hash(pass_pulita)),
             )
         return True
     except sqlite3.IntegrityError:
         return False
 
 
-def verifica_login(username: str, password: str) -> bool:
+def verifica_login(username: str, password: str) -> Optional[str]:
+    user_pulito = username.strip()
+    pass_pulita = password.strip()
+    if not user_pulito or not pass_pulita:
+        return None
+    
     # Verifica credenziali di accesso
     with closing(connetti()) as conn, conn:
         cursor = conn.cursor()
         cursor.execute(
             '''
-            SELECT password FROM utenti WHERE username = ?
+            SELECT username, password FROM utenti WHERE LOWER(username) = LOWER(?)
             ''',
-            (username,),
+            (user_pulito,),
         )
         utente = cursor.fetchone()
 
         # Utente non trovato
         if utente is None:
-            return False
+            return None
 
-        password_salvata = utente[0]
+        username_canonico, password_salvata = utente
+        
+        if verifica_hash(pass_pulita, password_salvata):
+            return username_canonico
+        return None
 
-        # Caso vecchio database: password salvata in chiaro (senza "$")
-        if "$" not in password_salvata:
-            if password == password_salvata:
-                # Aggiorno subito la riga con l'hash, cosi' la prossima volta e' protetta
-                cursor.execute(
-                    'UPDATE utenti SET password = ? WHERE username = ?',
-                    (genera_hash(password), username),
-                )
-                return True
-            return False
-
-        # Caso normale: confronto la password inserita con l'hash salvato
-        return verifica_hash(password, password_salvata)
-
-
-def aggiorna_statistiche_vittoria(username: str, turni: int) -> None:
+def aggiorna_statistiche_vittoria(username: str, giri: int) -> None:
     with closing(connetti()) as conn, conn:
         cursor = conn.cursor()
 
@@ -166,7 +203,7 @@ def aggiorna_statistiche_vittoria(username: str, turni: int) -> None:
         if risultato is None:
             raise ValueError(f"Utente '{username}' non trovato nel database.")
         record = risultato[0]
-        nuovo_record = turni if (record is None or turni < record) else record
+        nuovo_record = giri if (record is None or giri < record) else record
         cursor.execute(
             '''
             UPDATE utenti
@@ -177,13 +214,14 @@ def aggiorna_statistiche_vittoria(username: str, turni: int) -> None:
             ''',
             (nuovo_record, username),
         )
-
-
 def aggiorna_statistiche_sconfitta(username: str) -> None:
-    # Incrementa per i giocatori che hanno perso
+    """
+    Incrementa per i giocatori che hanno perso.
+    Restituisce True se l'utente esiste ed e' aggiornato, senno' False
+    """
     with closing(connetti()) as conn, conn:
         cursor = conn.cursor()
-        conn.execute(
+        cursor.execute(
             '''
             UPDATE utenti
             SET partite_giocate = partite_giocate + 1
@@ -192,10 +230,9 @@ def aggiorna_statistiche_sconfitta(username: str) -> None:
             (username,),
         )
         if cursor.rowcount == 0:
-            raise ValueError(f"Utente '{username}' non trovato nel database.")
+            raise ValueError(f"Utente '{username}' non trovato nel database")
 
-
-def salva_eventi(registro_eventi: List[str], vincitore: str = "Sconosciuto", turni_totali: int = 0) -> int:
+def salva_eventi(registro_eventi: List[str], vincitore: str = "Sconosciuto", giri_totali: int = 0) -> int:
     data_ora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     with closing(connetti()) as conn, conn:
@@ -205,7 +242,7 @@ def salva_eventi(registro_eventi: List[str], vincitore: str = "Sconosciuto", tur
             INSERT INTO partite (data_ora, vincitore, turni_totali)
             VALUES (?, ?, ?)
             ''',
-            (data_ora, vincitore, turni_totali),
+            (data_ora, vincitore, giri_totali),
         )
         partita_id = cursor.lastrowid
 

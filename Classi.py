@@ -183,9 +183,6 @@ class Partita:
         '''
         if self._partita_finita:
             return "la partita e'terminata"
-        #Incrementa il giro ogni volta che il turno riparte dal primo giocatore
-        if self._indice_turno == 0:
-            self._giri_completati += 1
         #Dati inizio turno
         giocatore = self.get_giocatore_corrente()
         lancio = self._dado.lancia()
@@ -221,11 +218,14 @@ class Partita:
             self._partita_finita = True
             self._vincitore = giocatore
             self._registro_eventi.append(f"!!!Vittoria!!! {giocatore.get_nome()} ha raggiunto la casella numero 100")
-        else:
-            self._indice_turno += 1
-            if self._indice_turno >= len(self._giocatori):
-                self._indice_turno = 0
+            
+        self._indice_turno += 1
+        if self._indice_turno >= len(self._giocatori):
+            self._indice_turno = 0
+            self._giri_completati += 1
+        
         return messaggio_evento
+    
     def calcola_classifica(self) -> list[Giocatore]:
     #Chi arriva a 100 vince, gli altri sono ordinati in base a dove si trovano
         classifica = sorted(

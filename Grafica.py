@@ -2,6 +2,8 @@ import math
 import random
 import pygame
 
+_FONT_CACHE: dict[tuple[str, int, bool], pygame.font.Font] = {}
+
 # CONFIGURAZIONE
 MARGINE = 25
 DIM_CELLA = 60
@@ -196,8 +198,8 @@ def crea_surface_tabellone(tabellone) -> pygame.Surface:
     surf = pygame.Surface((MARGINE * 2 + DIM_TABELLONE, ALTEZZA_FINESTRA))
     surf.fill(COLORE_SFONDO) #Lo colora
     #Prepara i due font di sistema
-    font_num = pygame.font.SysFont("Arial", 13, bold=True)
-    font_label = pygame.font.SysFont("Arial", 14, bold=True)
+    font_num = get_font("Helvetica", 13, bold=True)
+    font_label = get_font("Helvetica", 14, bold=True)
     #GRIGLIA
     for n in range(1,101):
         #ricava coordinate del centro della casella
@@ -398,18 +400,23 @@ def spezza_testo(testo: str, font: pygame.font.Font, max_larghezza: int) -> list
     #Restituisce la lista delle righe pronte
     return righe
 
+def get_font(nome: str, dimensione: int, grassetto: bool = False) -> pygame.font.Font:
+    chiave = (nome, dimensione, grassetto)
+    if chiave not in _FONT_CACHE:
+        _FONT_CACHE[chiave] = pygame.font.SysFont(nome, dimensione, bold=grassetto)
+    return _FONT_CACHE[chiave]
+
 def disegna_pannello(
     screen: pygame.Surface,
     partita,
     giocatore_turno,
-    turni: int,
+    giri: int,
     valore_dado: int,
     stato: str,
     rect_pannello: pygame.Rect,
     rect_dado: pygame.Rect,
     rect_bottone: pygame.Rect,
     pos_mouse: tuple[int, int],
-    classifica_finale: list = None,
 ): #Disegna l'intero pannello informativo sulla destra
     #SFONDO E BORDO PANNELLO
     #Disegna il rettangolo bianco di sfondo del pannello 
@@ -417,50 +424,44 @@ def disegna_pannello(
     #Disegna il bordo grigio-blu esterno del pannello
     pygame.draw.rect(screen, COLORE_BORDO, rect_pannello, 2, border_radius=12)
     #Prepara i 4 font con dimensioni e stili diversi 
-    font_titolo = pygame.font.SysFont("Arial", 20, bold=True)  #Titolo principale
-    font_sub = pygame.font.SysFont("Arial", 15, bold=True)     #Sottotitoli, turno e testo pulsante
-    font_testo = pygame.font.SysFont("Arial", 14)              #Informazioni secondarie (turni, posizione)
-    font_log = pygame.font.SysFont("Arial", 13)                #Cronologia eventi in piccolo
+    font_titolo = get_font("Helvetica", 20, bold=True)  #Titolo principale
+    font_sub = get_font("Helvetica", 15, bold=True)     #Sottotitoli, turno e testo pulsante
+    font_testo = get_font("Helvetica", 14)              #Informazioni secondarie (giri, posizione)
+    font_log = get_font("Helvetica", 13)                #Cronologia eventi in piccolo
+   
     #Calcola il margine sinistro interno e la larghezza utile per il testo
     x0 = rect_pannello.x + 18
     larghezza_utile = rect_pannello.width - 36
     
-    #INTESTAZIONE E CONTATORE TURNI
+    #INTESTAZIONE E CONTATORE GIRI
     #Stampa il titolo del gioco in alto nel pannello
     screen.blit(font_titolo.render("SCALE E SERPENTI", True, COLORE_TESTO), (x0, rect_pannello.y + 16))
-    #Stampa il numero totale di turni completati
-    screen.blit(font_testo.render(f"Turni completati: {turni}", True, COLORE_TESTO_TENUE), (x0, rect_pannello.y + 46))
+    #Stampa il numero totale di girii completati
+    screen.blit(font_testo.render(f"Giri completati: {giri}", True, COLORE_TESTO_TENUE), (x0, rect_pannello.y + 46))
 
     #INFORMAZIONI SUL GIOCATORE DI TURNO (O VINCITORE)
     #Coordinata di partenza
     y_curr = rect_pannello.y + 78
-    #Caso A: la partita è finita -> mostra il vincitore in verde
-    if stato == "FINE":
-        vincitore = classifica_finale[0] if classifica_finale else partita.calcola_classifica()[0]
-        screen.blit(font_sub.render("PARTITA TERMINATA!", True, (40, 167, 69)), (x0, y_curr))
-        screen.blit(font_sub.render(f"Vincitore: {vincitore.get_nome()}", True, COLORE_TESTO), (x0, y_curr + 24))
-    #Caso B: partita in corso -> mostra pallino colorato, nome, tipologia e casella del giocatore di turno
-    else:
-        #Traduce in RGB il colore della pedina attuale (get_colore, non "colore")
-        colore_g = traduci_colore(getattr(giocatore_turno, "colore", "blu"))
-        #Disegna un'anteprima della sua pedina (cerchio colorato + bordo scuro) accanto al nome
-        pygame.draw.circle(screen, colore_g, (x0 + 8, y_curr + 9), 8)
-        pygame.draw.circle(screen, (20, 20, 20), (x0 + 8, y_curr + 9), 8, 1)
-        #Determina l'etichetta ("Bot" o "Umano") e stampa il nome 
-        tipo_g = "Bot" if giocatore_turno.is_bot() else "Umano"
-        screen.blit(font_sub.render(f"Turno: {giocatore_turno.get_nome()} ({tipo_g})", True, COLORE_TESTO), (x0 + 24, y_curr))
-        #Stampa la casella in cui si trova attualmente il giocatore
-        screen.blit(font_testo.render(f"Posizione attuale: casella {giocatore_turno.get_posizione()}", True, COLORE_TESTO_TENUE), (x0, y_curr + 24))
+    #Traduce in RGB il colore della pedina attuale (get_colore, non "colore")
+    colore_g = traduci_colore(
+        giocatore_turno.get_colore()
+        if hasattr(giocatore_turno, "get_colore")
+        else getattr(giocatore_turno, "_colore", (33, 150, 243))
+    )
+    #Disegna un'anteprima della sua pedina (cerchio colorato + bordo scuro) accanto al nome
+    pygame.draw.circle(screen, colore_g, (x0 + 8, y_curr + 9), 8)
+    pygame.draw.circle(screen, (20, 20, 20), (x0 + 8, y_curr + 9), 8, 1)
+    #Determina l'etichetta ("Bot" o "Umano") e stampa il nome 
+    tipo_g = "Bot" if giocatore_turno.is_bot() else "Umano"
+    screen.blit(font_sub.render(f"Turno: {giocatore_turno.get_nome()} ({tipo_g})", True, COLORE_TESTO), (x0 + 24, y_curr))
+    #Stampa la casella in cui si trova attualmente il giocatore
+    screen.blit(font_testo.render(f"Posizione attuale: casella {giocatore_turno.get_posizione()}", True, COLORE_TESTO_TENUE), (x0, y_curr + 24))
         
     #DADO GRAFICO E PULSANTE D'AZIONE
     #Chiama disegna_dado
     disegna_dado(screen, rect_dado, valore_dado, in_animazione=(stato == "ANIMAZIONE_DADO"))
     #Sceglie colore e testo del pulsante in base allo stato del gioco:
-    if stato == "FINE":
-        #Verde (più chiaro se il mouse ci passa sopra) per chiudere e generare il PDF
-        colore_btn = (40, 167, 69) if rect_bottone.collidepoint(pos_mouse) else (33, 136, 56)
-        testo_btn = "Continua e Salva Report"
-    elif giocatore_turno.is_bot() or stato == "ANIMAZIONE_DADO":
+    if giocatore_turno.is_bot() or stato == "ANIMAZIONE_DADO":
         #Grigio disabilitato quando tocca a un Bot o mentre il dado sta già girando
         colore_btn = COLORE_BOTTONE_DISABILITATO
         testo_btn = "Turno Bot..." if giocatore_turno.is_bot() else "Lancio in corso..."
@@ -503,7 +504,7 @@ def avvia_partita_grafica(partita) -> int:
     """
     Avvia il game loop grafico con macchina a stati:
     ATTESA -> ANIMAZIONE_DADO -> TURNO -> FINE
-    Restituisce il numero totale di turni giocati
+    Restituisce il numero totale di giri completati
     """
     # INIZIALIZZAZIONE FINESTRA E RISORSE STATICHE
     pygame.init()
@@ -637,7 +638,7 @@ def avvia_partita_grafica(partita) -> int:
                 screen,
                 partita,
                 giocatore_corrente,
-                turni,
+                partita.get_giri_completati(),
                 valore_dado,
                 stato,
                 rect_pannello,
@@ -655,8 +656,8 @@ def avvia_partita_grafica(partita) -> int:
     # CHIUSURA PULITA E RITORNO A MAIN.PY
     pygame.quit()
 
-    # Restituisce il numero totale di turni a main.py per generare classifica, PDF e High Score
-    return turni
+    # Restituisce il numero totale di giri a main.py per generare classifica, PDF e High Score
+    return partita.get_giri_completati()
 
 def disegna_podio(
     screen: pygame.Surface,
@@ -670,11 +671,9 @@ def disegna_podio(
         # Caso limite: nessun giocatore. Non c'e' nulla da disegnare ne' un pulsante da cliccare.
         return None
 
-    # Font in stile coerente con il resto del file (Arial): "Helvetica" non e'
-    # detto che esista su Windows e pygame ripiegherebbe su un font generico.
-    font_titolo = pygame.font.SysFont("Arial", 32, bold=True)
-    font_medaglia = pygame.font.SysFont("Arial", 24, bold=True)
-    font_info = pygame.font.SysFont("Arial", 15)
+    font_titolo = get_font("Helvetica", 32, bold=True)
+    font_medaglia = get_font("Helvetica", 24, bold=True)
+    font_info = get_font("Helvetica", 15)
 
     # Titolo in alto
     t_titolo = font_titolo.render("CLASSIFICA FINALE", True, COLORE_TESTO)
@@ -739,10 +738,10 @@ def disegna_podio(
 
         # 1) Prova a ridurre il font se il nome è troppo largo
         dim_font = 18
-        font_nome = pygame.font.SysFont("Arial", dim_font, bold=True)
+        font_nome = get_font("Helvetica", dim_font, bold=True)
         while font_nome.size(nome)[0] > larghezza_max and dim_font > 13:
             dim_font -= 1
-            font_nome = pygame.font.SysFont("Arial", dim_font, bold=True)
+            font_nome = get_font("Helvetica", dim_font, bold=True)
 
         # 2) Se supera la larghezza del cubo, tronca con "..."
         if font_nome.size(nome)[0] > larghezza_max:
@@ -764,7 +763,7 @@ def disegna_podio(
     # Eventuale riga "Voi altri" sotto la base del podio.
     # Uso un font dedicato piu' grande e in grassetto (rispetto a font_info,
     # usato per i testi secondari come "Casella N") per dare risalto alla frase.
-    font_altri = pygame.font.SysFont("Arial", 22, bold=True)
+    font_altri = get_font("Helvetica", 22, bold=True)
     y_footer = y_base + 24
     if len(classifica) > 3:
         surf_altri = font_altri.render("Voi altri: i serpenti vi hanno preso", True, COLORE_TESTO_TENUE)
@@ -778,7 +777,7 @@ def disegna_podio(
     pygame.draw.rect(screen, COLORE_BOTTONE, rect_bottone_podio, border_radius=8)
     pygame.draw.rect(screen, COLORE_BORDO, rect_bottone_podio, 2, border_radius=8)
 
-    font_btn = pygame.font.SysFont("Arial", 18, bold=True)
+    font_btn = get_font("Helvetica", 18, bold=True)
     t_btn = font_btn.render("Continua", True, (255, 255, 255))
     screen.blit(t_btn, t_btn.get_rect(center=rect_bottone_podio.center))
 
