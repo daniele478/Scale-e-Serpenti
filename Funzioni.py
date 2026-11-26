@@ -1,8 +1,5 @@
-from Classi import Giocatore
 import random
-import re
-
-USERNAME_REGEX = re.compile(r"^[a-zA-Z0-9_-]{3,16}$")
+import sys
 
 def genera_collegamenti_casuali(num_scale: int = 8, num_serpenti: int = 8) -> dict[int, tuple[int, str, str]]:
     """
@@ -57,10 +54,12 @@ def genera_collegamenti_casuali(num_scale: int = 8, num_serpenti: int = 8) -> di
 
 #Funzione per il podio (versione testuale usata dalla CLI)
 def genera_podio(classifica: list) -> str:
-    # Solo i primi 3 salgono sul podio: gli altri non vengono nominati.
-    # (La grafica ha la sua resa con i cubi in Grafica.disegna_podio,
-    # ma la regola "top 3 + altri" deve restare identica in entrambe.)
-    simboli = [" 🥇 Primo posto", " 🥈 Secondo posto", " 🥉 Terzo posto"]
+    encoding = (getattr(sys.stdout, "encoding", None) or "").lower()
+    if "utf" in encoding:
+        simboli = [" 🥇 Primo posto", " 🥈 Secondo posto", " 🥉 Terzo posto"]
+    else:
+        simboli = [" [1°] Primo posto", " [2°] Secondo posto", " [3°] Terzo posto"]
+
     testo_podio = "\nClassifica Finale\n"
     for i, giocatore in enumerate(classifica[:3]):
         testo_podio += f"{simboli[i]}: {giocatore.get_nome()} (Casella {giocatore.get_posizione()})\n"

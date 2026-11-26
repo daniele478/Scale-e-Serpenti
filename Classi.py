@@ -11,8 +11,10 @@ else:
 
 #Creo la classe Dado
 class Dado:
-    def __init__(self,facce=6):
-        self._facce = facce #Assegno il numero di facce al dado
+    def __init__(self, facce: int = 6):
+        if isinstance(facce, bool) or not isinstance(facce, int) or facce <= 0:
+            raise ValueError("Il numero di facce del dado deve essere un intero maggiore di 0")
+        self._facce = facce  # Assegno il numero di facce al dado
     def get_facce(self):
         return self._facce
     def lancia(self):
@@ -127,7 +129,7 @@ class Tabellone:
         return self._collegamenti
         
     def valuta_casella(self, posizione:int) -> tuple[bool,int,str,str]:
-    #trovato[vero,posizione,scla/seprente,rossa/gialla/verde]
+    #trovato[vero,posizione,scala/serpente,rossa/gialla/verde]
         if posizione in self._collegamenti:
             nuova_pos, tipo, colore = self._collegamenti[posizione]
             return True, nuova_pos, tipo, colore
@@ -149,7 +151,7 @@ class Partita:
         self._giri_completati = 0
         self._vincitore = None
         self._partita_finita = False
-        self._registro_eventi = []
+        self._registro_eventi: list[tuple[int, str]] = []
         self._classifica_finale = []
         self._ultimo_lancio = None
 
@@ -159,7 +161,11 @@ class Partita:
     def get_giocatore_corrente(self) -> Giocatore:
         return self._giocatori[self._indice_turno]
     def get_registro_eventi(self) -> list[str]:
-        return self._registro_eventi
+        #Restituisce l'elenco testo degli eventi (per PDF e Grafica) 
+        return [f"[Giro {giro}] {desc}" for giro, desc in self._registro_eventi]
+    def get_registro_eventi_dettagliato(self) -> list[tuple[int, str]]:
+        #Restituisce le tuple (giro, descrizione) per il salvataggio su DB
+        return list(self._registro_eventi)
     def get_vincitore(self) -> Giocatore:
         return self._vincitore
     def get_tabellone(self) -> Tabellone:
@@ -182,7 +188,7 @@ class Partita:
         5.passo il turno
         '''
         if self._partita_finita:
-            return "la partita e'terminata"
+            return "La partita e' terminata"
         #Dati inizio turno
         giocatore = self.get_giocatore_corrente()
         lancio = self._dado.lancia()
@@ -211,14 +217,15 @@ class Partita:
                 messaggio_evento += f" Scivola su un serpente {colore} fino alla casella {pos_finale}."
 
         # Salvo l'evento
-        self._registro_eventi.append(messaggio_evento)
+        giro_corrente = self._giri_completati + 1
+        self._registro_eventi.append((giro_corrente, messaggio_evento))
         
         #3. Ho vinto?
         if giocatore.vincitore():
             self._partita_finita = True
             self._vincitore = giocatore
-            self._registro_eventi.append(f"!!!Vittoria!!! {giocatore.get_nome()} ha raggiunto la casella numero 100")
-            
+            self._registro_eventi.append((giro_corrente, f"!!!Vittoria!!! {giocatore.get_nome()} ha raggiunto la casella numero 100"))
+        
         self._indice_turno += 1
         if self._indice_turno >= len(self._giocatori):
             self._indice_turno = 0
@@ -230,10 +237,8 @@ class Partita:
     #Chi arriva a 100 vince, gli altri sono ordinati in base a dove si trovano
         classifica = sorted(
             self._giocatori,
-            key = lambda giocatore: giocatore.get_posizione(),
-            reverse = True
+            key=lambda giocatore: (-giocatore.get_posizione(), giocatore._id)
         )
     #Reverse=True inverte l'ordine in modo che chi ha 100 finisce a indice 0, senno' sarebbe ultimo
-    #lambda?
         self._classifica_finale = classifica
         return classifica

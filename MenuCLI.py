@@ -6,9 +6,10 @@ from Database import (
     registra_utente,
     verifica_login,
     ottieni_highscore,
+    ottieni_storico_partite,
+    ottieni_eventi_partita,
 )
-
-
+ 
 def genera_colori(n: int) -> list[tuple[int, int, int]]:
     """Genera una lista di n colori RGB casuali ben visibili sul tabellone."""
     colori = []
@@ -41,6 +42,43 @@ def mostra_highscore() -> None:
             print(f"{utente:<15} | {giocate:<8} | {vinte:<8} | {testo_record:<12}")
     print("=" * 55 + "\n")
 
+def mostra_storico_partite() -> None:
+    """Mostra l'elenco delle partite concluse e permette di ispezionare gli eventi di una partita."""
+    while True:
+        partite = ottieni_storico_partite()
+        print("\n" + "=" * 65)
+        print(" STORICO PARTITE ")
+        print("=" * 65)
+
+        if not partite:
+            print("Nessuna partita ancora registrata.")
+            print("=" * 65 + "\n")
+            return
+
+        print(f"{'ID':<5} | {'DATA E ORA':<20} | {'VINCITORE':<15} | {'GIRI':<6}")
+        print("-" * 65)
+        id_validi = set()
+        for pid, data_ora, vincitore, turni in partite:
+            id_validi.add(pid)
+            print(f"{pid:<5} | {data_ora:<20} | {vincitore:<15} | {turni:<6}")
+        print("=" * 65)
+
+        scelta = input("Inserisci ID partita per vedere i dettagli (oppure Invio per tornare): ").strip()
+        if not scelta:
+            return
+        if len(scelta) > 8 or not scelta.isdigit() or int(scelta) not in id_validi:
+            print("ID partita non valido.")
+            continue
+
+        pid_scelto = int(scelta)
+        eventi = ottieni_eventi_partita(pid_scelto)
+        print(f"\n--- Registro Eventi Partita #{pid_scelto} ---")
+        if not eventi:
+            print("Nessun evento registrato per questa partita.")
+        else:
+            for indice, giro, descrizione in eventi:
+                print(f"[{indice:03d}] Giro {giro}: {descrizione}")
+        input("\nPremi Invio per tornare allo storico...")
 
 def autentica_giocatore_umano(numero_giocatore: int, utenti_loggati: list[str]) -> str:
     """
@@ -57,7 +95,7 @@ def autentica_giocatore_umano(numero_giocatore: int, utenti_loggati: list[str]) 
             continue
 
         raw_username = input("Inserisci Username (3-16 caratteri, lettere/numeri/_/-): ")
-        raw_password = input("Inserisci Password (minimo 4 caratteri): ")
+        raw_password = input("Inserisci Password (4-64 caratteri): ")
 
         # Controllo 1: formato, lunghezza e caratteri ammessi
         try:
@@ -93,8 +131,12 @@ def configura_partita() -> Partita:
 
     tot_giocatori = 0
     while tot_giocatori < 2 or tot_giocatori > 26:
+        valore = input("Inserisci il numero di giocatori (2-26): ").strip()
+        if len(valore) > 5:
+            print("Input non valido. Inserisci un numero intero tra 2 e 26.")
+            continue
         try:
-            tot_giocatori = int(input("Inserisci il numero di giocatori (2-26): "))
+            tot_giocatori = int(valore)
             if tot_giocatori < 2 or tot_giocatori > 26:
                 print("Numero di giocatori non valido. Inserisci un numero tra 2 e 26.")
         except ValueError:
@@ -102,8 +144,12 @@ def configura_partita() -> Partita:
 
     umani = -1
     while umani < 1 or umani > tot_giocatori:
+        valore = input(f"Inserisci il numero di giocatori umani (1-{tot_giocatori}): ").strip()
+        if len(valore) > 5:
+            print("Input non valido. Inserisci un numero intero.")
+            continue
         try:
-            umani = int(input(f"Inserisci il numero di giocatori umani (1-{tot_giocatori}): "))
+            umani = int(valore)
             if umani < 1 or umani > tot_giocatori:
                 print(f"Numero di giocatori umani non valido. Inserisci un numero tra 1 e {tot_giocatori}.")
         except ValueError:
@@ -131,19 +177,18 @@ def configura_partita() -> Partita:
     dado = Dado()
     return Partita(giocatori, tabellone, dado)
 
-
 def chiedi_azione_menu() -> str:
-    """Mostra il menu principale e restituisce la scelta valida ('1', '2' o '3')."""
+    """Mostra il menu principale e restituisce la scelta valida ('1', '2', '3' o '4')."""
     while True:
         print("\n MENU PRINCIPALE:")
         print("1. Nuova Partita (Login e Gioca)")
         print("2. Visualizza Classifica")
-        print("3. Esci dal gioco")
-        scelta = input("Seleziona 1-3: ").strip()
-        if scelta in ["1", "2", "3"]:
+        print("3. Storico Partite")
+        print("4. Esci dal gioco")
+        scelta = input("Seleziona 1-4: ").strip()
+        if scelta in ["1", "2", "3", "4"]:
             return scelta
         print("Opzione inesistente.")
-
 
 def chiedi_modalita_gioco() -> str:
     """Chiede all'utente se giocare in CLI ('1') o con interfaccia grafica ('2')."""

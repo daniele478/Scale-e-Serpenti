@@ -1,4 +1,5 @@
 import time
+import sys
 from Funzioni import genera_podio
 from ReportPDF import genera_report_pdf
 from Database import (
@@ -9,11 +10,18 @@ from Database import (
 )
 from MenuCLI import (
     mostra_highscore,
+    mostra_storico_partite,
     configura_partita,
     chiedi_azione_menu,
     chiedi_modalita_gioco,
 )
 
+for stream in (sys.stdout, sys.stderr):
+    if hasattr(stream, "reconfigure"):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
 
 def gioca_partita_cli(partita) -> None:
     """Esegue il ciclo dei turni in modalita' testuale da terminale."""
@@ -49,7 +57,7 @@ def finalizza_partita(partita) -> None:
                 aggiorna_statistiche_sconfitta(giocatore.get_nome())
 
     registro = partita.get_registro_eventi()
-    salva_eventi(registro, vincitore.get_nome(), giri_giocati)
+    salva_eventi(partita.get_registro_eventi_dettagliato(), vincitore.get_nome(), giri_giocati)
     print("\nDb Aggiornato: Applausi per il vincitore!!")
 
     try:
@@ -71,9 +79,11 @@ def main() -> None:
             mostra_highscore()
             continue
         if scelta_menu == "3":
+            mostra_storico_partite()
+            continue
+        if scelta_menu == "4":
             print("Scappi gia'? I serpenti sentiranno la tua mancanza. A presto!")
             break
-
         partita = configura_partita()
         modalita = chiedi_modalita_gioco()
         print("\nIniziano i giochi, attenzione ai serpenti!\n")

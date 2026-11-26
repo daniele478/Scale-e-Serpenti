@@ -53,11 +53,28 @@ def crea_tabelle() -> None:
             '''
         )
 
+        # Migrazione dello schema di registro_eventi.
+        # Se la tabella esiste ma non ha tutte le colonne richieste (schema
+        # vecchio senza indice_evento oppure schema intermedio senza giro),
+        # viene ricreata da zero. Gli eventi dei vecchi schemi non sono
+        # convertibili in modo affidabile, quindi vengono scartati e i
+        # record_turni (legati a quei dati) vengono azzerati.
         cursor.execute("PRAGMA table_info(registro_eventi)")
         colonne = {riga[1] for riga in cursor.fetchall()}
-        if colonne and "indice_evento" not in colonne:
-            cursor.execute("DROP TABLE registro_eventi")  
-            cursor.execute("UPDATE utenti SET record_turni = NULL")                
+        colonne_richieste = {
+            "id",
+            "partita_id",
+            "indice_evento",
+            "giro",
+            "descrizione",
+            "timestamp",
+        }
+        if colonne and not colonne_richieste.issubset(colonne):
+            cursor.execute("DROP TABLE registro_eventi")
+            # Anche lo storico partite dipende dagli eventi scartati: senza
+            # questa pulizia resterebbero partite visibili ma senza eventi.
+            cursor.execute("DELETE FROM partite")
+            cursor.execute("UPDATE utenti SET record_turni = NULL")
 
         # Tabella Registro Eventi (collegata alla singola partita tramite partita_id)
         cursor.execute(
@@ -66,9 +83,9 @@ def crea_tabelle() -> None:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 partita_id INTEGER NOT NULL,
                 indice_evento INTEGER NOT NULL,
-                timestamp TEXT NOT NULL,
+                giro INTEGER NOT NULL,
                 descrizione TEXT NOT NULL,
-                FOREIGN KEY (partita_id) REFERENCES partite(id)
+                timestamp TEXT NOT NULL
             )
             '''
         )
@@ -138,6 +155,9 @@ def valida_credenziali(username: str, password: str) -> tuple[str, str]:
     if len(pass_pulita) < 4:
         raise ValueError("Password non valida: deve contenere almeno 4 caratteri.")
 
+    if not (4 <= len(pass_pulita) <= 64):
+        raise ValueError("Password non valida: deve contenere tra 4 e 64 caratteri.")
+    
     return user_pulito, pass_pulita
 
 def registra_utente(username: str, password: str) -> bool:
@@ -232,33 +252,36 @@ def aggiorna_statistiche_sconfitta(username: str) -> None:
         if cursor.rowcount == 0:
             raise ValueError(f"Utente '{username}' non trovato nel database")
 
-def salva_eventi(registro_eventi: List[str], vincitore: str = "Sconosciuto", giri_totali: int = 0) -> int:
+def salva_eventi(eventi: list, vincitore: str, giri_totali: int) -> None:
+    if not eventi:
+        return
     data_ora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    timestamp = datetime.now().isoformat(timespec="seconds")
 
     with closing(connetti()) as conn, conn:
         cursor = conn.cursor()
         cursor.execute(
-            '''
+            """
             INSERT INTO partite (data_ora, vincitore, turni_totali)
             VALUES (?, ?, ?)
-            ''',
+            """,
             (data_ora, vincitore, giri_totali),
         )
         partita_id = cursor.lastrowid
 
-        righe_eventi = [
-            (partita_id, i, data_ora, evento)
-            for i, evento in enumerate(registro_eventi, 1)
-        ]
-        cursor.executemany(
-            '''
-            INSERT INTO registro_eventi (partita_id, indice_evento, timestamp, descrizione)
-            VALUES (?, ?, ?, ?)
-            ''',
-            righe_eventi,
-        )
+        for indice, elemento in enumerate(eventi, start=1):
+            if isinstance(elemento, tuple):
+                giro, descrizione = elemento
+            else:
+                giro, descrizione = 0, str(elemento)
 
-    return partita_id
+            cursor.execute(
+                """
+                INSERT INTO registro_eventi (partita_id, indice_evento, giro, descrizione, timestamp)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (partita_id, indice, giro, descrizione, timestamp),
+            )
 
 
 def ottieni_highscore() -> List[Tuple[str, int, int, Optional[int]]]:
@@ -281,4 +304,41 @@ def ottieni_highscore() -> List[Tuple[str, int, int, Optional[int]]]:
         )
         # l'ordine scritto in linguaggio SQL
         # COALESCE = trasforma i valori NULL in 999999 per metterli ultimi in posizione
+        return cursor.fetchall()
+
+def ottieni_storico_partite(limite: int = 20) -> List[Tuple[int, str, str, int]]:
+    """
+     Restituisce le ultime `limite` partite concluse:
+    [(id, data_ora, vincitore, turni_totali), ...]
+    """
+    with closing(connetti()) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT id, data_ora, vincitore, turni_totali
+            FROM partite
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (limite,),
+        )
+        return cursor.fetchall()
+
+
+def ottieni_eventi_partita(partita_id: int) -> List[Tuple[int, int, str]]:
+    """
+    Restituisce tutti gli eventi di una specifica partita ordinati cronologicamente:
+    [(indice_evento, giro, descrizione), ...]
+    """
+    with closing(connetti()) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT indice_evento, giro, descrizione
+            FROM registro_eventi
+            WHERE partita_id = ?
+            ORDER BY indice_evento ASC
+            """,
+            (partita_id,),
+        )
         return cursor.fetchall()

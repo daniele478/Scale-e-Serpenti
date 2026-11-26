@@ -1,22 +1,15 @@
-﻿BUSCEMIDANIELE.pdf
+# File personali e materiale di studio
+BUSCEMIDANIELE.pdf
 testi e regole/
+COSEDAFARE.txt
 
+# Python
 __pycache__/
 *.pyc
+*.pyo
+
+# Database locale
 *.db
+
+# Report generati a runtime
 report_partite/
-
-COSEDAFARE.txt
-COSEDAFARE.txt
-
-COSEDAFARE.txt
-
-Funzioni.Cpython-313.pyc.txt
-
-__pycache__/Funzioni.Cpython-313.pyc.txt
-
-__pycache__/Funzioni.Cpython-313.pyc
-
- __pycache__/Database.Cpython-313.pyc
-
- __pycache__/Classi.Cpython-313.pyc

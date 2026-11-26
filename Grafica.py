@@ -400,10 +400,10 @@ def spezza_testo(testo: str, font: pygame.font.Font, max_larghezza: int) -> list
     #Restituisce la lista delle righe pronte
     return righe
 
-def get_font(nome: str, dimensione: int, grassetto: bool = False) -> pygame.font.Font:
-    chiave = (nome, dimensione, grassetto)
+def get_font(nome: str, dimensione: int, bold: bool = False) -> pygame.font.Font:
+    chiave = (nome, dimensione, bold)
     if chiave not in _FONT_CACHE:
-        _FONT_CACHE[chiave] = pygame.font.SysFont(nome, dimensione, bold=grassetto)
+        _FONT_CACHE[chiave] = pygame.font.SysFont(nome, dimensione, bold=bold)
     return _FONT_CACHE[chiave]
 
 def disegna_pannello(
@@ -436,7 +436,7 @@ def disegna_pannello(
     #INTESTAZIONE E CONTATORE GIRI
     #Stampa il titolo del gioco in alto nel pannello
     screen.blit(font_titolo.render("SCALE E SERPENTI", True, COLORE_TESTO), (x0, rect_pannello.y + 16))
-    #Stampa il numero totale di girii completati
+    #Stampa il numero totale di giri completati
     screen.blit(font_testo.render(f"Giri completati: {giri}", True, COLORE_TESTO_TENUE), (x0, rect_pannello.y + 46))
 
     #INFORMAZIONI SUL GIOCATORE DI TURNO (O VINCITORE)
