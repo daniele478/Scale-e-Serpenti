@@ -1,34 +1,36 @@
 import os
 import sqlite3
-import hashlib  # serve per creare l'hash della password
-import hmac     # serve per confrontare gli hash in modo sicuro
-import secrets  # serve per generare un salt casuale
-import re       # serve per verificare formato/caratteri dello username
+import hashlib  # Genera l'hash crittografico delle password (PBKDF2-HMAC)
+import hmac     # Confronta due hash in tempo costante (previene timing attack)
+import secrets  # Genera salt crittograficamente sicuri
+import re       # Espressioni regolari per validare il formato dell'username
 from datetime import datetime
 from typing import List, Tuple, Optional
 from contextlib import closing
 
+# Percorso assoluto della cartella corrente e del file database SQLite
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 db_nome = os.path.join(BASE_DIR, "scale_serpenti.db")
 
-# Numero di "giri" usati per creare l'hash.
-# Piu' e' alto, piu' la password e' difficile da indovinare, ma il login e' piu' lento.
+# Numero di iterazioni PBKDF2: rallenta gli attacchi brute-force mantenendo il login reattivo
 ITERAZIONI_HASH = 260000
 
-
+# CONNESSIONE E INIZIALIZZAZIONE SCHEMA DATABASE
 def connetti():
-    # Crea la connessione al db e abilita le chiavi esterne
+    """Apre una connessione al database SQLite e attiva i vincoli di chiave esterna."""
     conn = sqlite3.connect(db_nome)
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 
 def crea_tabelle() -> None:
-    # Crea le tabelle
+    """Crea le tabelle necessarie del database se non esistono ancora."""
+    # 'closing(connetti())' garantisce la chiusura della connessione;
+    # 'with conn:' gestisce automaticamente commit o rollback della transazione.
     with closing(connetti()) as conn, conn:
         cursor = conn.cursor()
 
-        # Tabella Utenti
+        # Tabella Utenti: credenziali (password hash) e statistiche cumulative
         cursor.execute(
             '''
             CREATE TABLE IF NOT EXISTS utenti (
@@ -41,7 +43,7 @@ def crea_tabelle() -> None:
             '''
         )
 
-        # Tabella Partite (storico di tutte le partite concluse)
+        # Tabella Partite: riepilogo delle partite concluse
         cursor.execute(
             '''
             CREATE TABLE IF NOT EXISTS partite (
@@ -53,30 +55,7 @@ def crea_tabelle() -> None:
             '''
         )
 
-        # Migrazione dello schema di registro_eventi.
-        # Se la tabella esiste ma non ha tutte le colonne richieste (schema
-        # vecchio senza indice_evento oppure schema intermedio senza giro),
-        # viene ricreata da zero. Gli eventi dei vecchi schemi non sono
-        # convertibili in modo affidabile, quindi vengono scartati e i
-        # record_turni (legati a quei dati) vengono azzerati.
-        cursor.execute("PRAGMA table_info(registro_eventi)")
-        colonne = {riga[1] for riga in cursor.fetchall()}
-        colonne_richieste = {
-            "id",
-            "partita_id",
-            "indice_evento",
-            "giro",
-            "descrizione",
-            "timestamp",
-        }
-        if colonne and not colonne_richieste.issubset(colonne):
-            cursor.execute("DROP TABLE registro_eventi")
-            # Anche lo storico partite dipende dagli eventi scartati: senza
-            # questa pulizia resterebbero partite visibili ma senza eventi.
-            cursor.execute("DELETE FROM partite")
-            cursor.execute("UPDATE utenti SET record_turni = NULL")
-
-        # Tabella Registro Eventi (collegata alla singola partita tramite partita_id)
+        # Tabella Registro Eventi: log dettagliato dei singoli turni per partita
         cursor.execute(
             '''
             CREATE TABLE IF NOT EXISTS registro_eventi (
@@ -90,60 +69,62 @@ def crea_tabelle() -> None:
             '''
         )
 
-
-# GESTIONE UTENTI E LOGIN
-
-# Crea l'hash della password con un salt casuale.
-# Il risultato e' una stringa da salvare nel database al posto della password.
+# SICUREZZA PASSWORD E VALIDAZIONE CREDENZIALI
 def genera_hash(password: str) -> str:
-    salt = secrets.token_bytes(16)  # salt casuale di 16 byte
+    """
+    Deriva un hash sicuro dalla password in chiaro usando PBKDF2-HMAC-SHA256
+    con un salt casuale da 16 byte.
+    Restituisce una stringa auto-descrittiva nel formato:
+        pbkdf2_sha256$<iterazioni>$<salt_hex>$<hash_hex>
+    """
+    salt = secrets.token_bytes(16)
     hash_password = hashlib.pbkdf2_hmac(
-        "sha256",                  # algoritmo usato
-        password.encode("utf-8"),  # password trasformata in byte
-        salt,                      # salt casuale
-        ITERAZIONI_HASH            # numero di ripetizioni
+        "sha256",
+        password.encode("utf-8"),
+        salt,
+        ITERAZIONI_HASH
     )
-    # Salvo algoritmo, iterazioni, salt e hash separati da "$"
     return f"pbkdf2_sha256${ITERAZIONI_HASH}${salt.hex()}${hash_password.hex()}"
 
 
-# Controlla se la password inserita corrisponde all'hash salvato
 def verifica_hash(password: str, hash_salvato: str) -> bool:
+    """
+    Verifica se 'password' corrisponde all'hash salvato nel database.
+    Estrae salt e iterazioni dalla stringa salvata, ricalcola l'hash e lo
+    confronta in tempo costante tramite 'hmac.compare_digest'.
+    """
     try:
-        # Divido la stringa salvata nelle sue 4 parti
         algoritmo, iterazioni, salt_hex, hash_hex = hash_salvato.split("$")
 
         if algoritmo != "pbkdf2_sha256":
             return False
 
-        # Rifaccio l'hash usando lo stesso salt e le stesse iterazioni
         hash_password = hashlib.pbkdf2_hmac(
             "sha256",
             password.encode("utf-8"),
             bytes.fromhex(salt_hex),
             int(iterazioni)
         )
-        # compare_digest confronta i due hash in modo sicuro
         return hmac.compare_digest(hash_password.hex(), hash_hex)
 
     except (ValueError, TypeError, AttributeError):
-        # Se la stringa salvata e' rovinata o nel formato sbagliato
+        # Stringa malformata o tipo non valido nel record DB
         return False
 
-USERNAME_REGEX = re.compile(r"^[a-zA-Z0-9_-]{3,16}$")   
-"""
-Regola validazione username:
-^...$           ---> controlla l'intera stringa
-[a-zA-Z0-9_-]   ---> ammette solo lettere,numeri, _, -
-{3,16}          ---> lunghezza compresa tra 3 e 16 caratteri
-"""
+
+# Espressione regolare per l'username:
+# ^...$           -> controlla l'intera stringa da inizio a fine
+# [a-zA-Z0-9_-]   -> ammette solo lettere, numeri, underscore e trattino
+# {3,16}          -> lunghezza minima 3, massima 16 caratteri
+USERNAME_REGEX = re.compile(r"^[a-zA-Z0-9_-]{3,16}$")
+
 
 def valida_credenziali(username: str, password: str) -> tuple[str, str]:
     """
-    Pulisce gli spazi esterni e verifica:
-    - username: 3-16 caratteri (solo lettere, numeri, '_' o '-')
-    - password: almeno 4 caratteri, senza spazi
-    ValueError messaggio se non valide.
+    Rimuove gli spazi iniziali/finali e verifica i vincoli di formato:
+    - username: 3-16 caratteri alfanumerici, '_' o '-'
+    - password: tra 4 e 64 caratteri
+    Solleva 'ValueError' con messaggio esplicativo se i dati non sono validi.
     """
     user_pulito = username.strip()
     pass_pulita = password.strip()
@@ -157,15 +138,22 @@ def valida_credenziali(username: str, password: str) -> tuple[str, str]:
 
     if not (4 <= len(pass_pulita) <= 64):
         raise ValueError("Password non valida: deve contenere tra 4 e 64 caratteri.")
-    
+
     return user_pulito, pass_pulita
 
+# REGISTRAZIONE E AUTENTICAZIONE UTENTI
 def registra_utente(username: str, password: str) -> bool:
-    user_pulito, pass_pulita, = valida_credenziali(username,password)
+    """
+    Registra un nuovo utente nel database con password hashata.
+    Il controllo di unicita' e' case-insensitive ("Daniele" e "daniele" coincidono).
+    Restituisce True se la registrazione riesce, False se l'username e' gia' in uso.
+    """
+    user_pulito, pass_pulita, = valida_credenziali(username, password)
     try:
         with closing(connetti()) as conn, conn:
-            cursor = conn.cursor() # oggetto che esegue le query SQL e legge i risultati dalla connessione
-            #"Daniele" e "daniele" sono lo stesso utente
+            cursor = conn.cursor()
+
+            # Verifica esistenza case-insensitive prima dell'inserimento
             cursor.execute(
                 "SELECT 1 FROM utenti WHERE LOWER(username) = LOWER(?)",
                 (user_pulito,),
@@ -186,12 +174,16 @@ def registra_utente(username: str, password: str) -> bool:
 
 
 def verifica_login(username: str, password: str) -> Optional[str]:
+    """
+    Verifica le credenziali di accesso in modo case-insensitive sullo username.
+    Restituisce lo username canonico salvato nel DB se il login ha successo,
+    altrimenti None.
+    """
     user_pulito = username.strip()
     pass_pulita = password.strip()
     if not user_pulito or not pass_pulita:
         return None
-    
-    # Verifica credenziali di accesso
+
     with closing(connetti()) as conn, conn:
         cursor = conn.cursor()
         cursor.execute(
@@ -202,28 +194,34 @@ def verifica_login(username: str, password: str) -> Optional[str]:
         )
         utente = cursor.fetchone()
 
-        # Utente non trovato
         if utente is None:
             return None
 
         username_canonico, password_salvata = utente
-        
+
         if verifica_hash(pass_pulita, password_salvata):
             return username_canonico
         return None
 
+# AGGIORNAMENTO STATISTICHE E SALVATAGGIO PARTITE
 def aggiorna_statistiche_vittoria(username: str, giri: int) -> None:
+    """
+    Incrementa partite giocate e vinte per il vincitore e aggiorna
+    'record_turni' se la partita e' stata vinta in meno giri rispetto al record.
+    """
     with closing(connetti()) as conn, conn:
         cursor = conn.cursor()
 
-        # Record attuale
+        # Recupera il record attuale (NULL se l'utente non ha mai vinto prima)
         cursor.execute('SELECT record_turni FROM utenti WHERE username = ?', (username,))
         risultato = cursor.fetchone()
 
         if risultato is None:
             raise ValueError(f"Utente '{username}' non trovato nel database.")
+
         record = risultato[0]
         nuovo_record = giri if (record is None or giri < record) else record
+
         cursor.execute(
             '''
             UPDATE utenti
@@ -234,10 +232,12 @@ def aggiorna_statistiche_vittoria(username: str, giri: int) -> None:
             ''',
             (nuovo_record, username),
         )
+
+
 def aggiorna_statistiche_sconfitta(username: str) -> None:
     """
-    Incrementa per i giocatori che hanno perso.
-    Restituisce True se l'utente esiste ed e' aggiornato, senno' False
+    Incrementa il contatore 'partite_giocate' per un utente che ha partecipato
+    senza vincere. Solleva 'ValueError' se l'utente non esiste nel database.
     """
     with closing(connetti()) as conn, conn:
         cursor = conn.cursor()
@@ -252,14 +252,22 @@ def aggiorna_statistiche_sconfitta(username: str) -> None:
         if cursor.rowcount == 0:
             raise ValueError(f"Utente '{username}' non trovato nel database")
 
+
 def salva_eventi(eventi: list, vincitore: str, giri_totali: int) -> None:
+    """
+    Salva in un'unica transazione il riepilogo della partita in 'partite'
+    e tutti i singoli eventi cronologici in 'registro_eventi'.
+    """
     if not eventi:
         return
+
     data_ora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     timestamp = datetime.now().isoformat(timespec="seconds")
 
     with closing(connetti()) as conn, conn:
         cursor = conn.cursor()
+
+        # Inserisce l'intestazione della partita e recupera l'ID
         cursor.execute(
             """
             INSERT INTO partite (data_ora, vincitore, turni_totali)
@@ -269,6 +277,7 @@ def salva_eventi(eventi: list, vincitore: str, giri_totali: int) -> None:
         )
         partita_id = cursor.lastrowid
 
+        # Inserisce ogni singolo evento collegandolo alla partita tramite 'partita_id'
         for indice, elemento in enumerate(eventi, start=1):
             if isinstance(elemento, tuple):
                 giro, descrizione = elemento
@@ -283,18 +292,16 @@ def salva_eventi(eventi: list, vincitore: str, giri_totali: int) -> None:
                 (partita_id, indice, giro, descrizione, timestamp),
             )
 
-
+# CONSULTAZIONE CLASSIFICA E STORICO
 def ottieni_highscore() -> List[Tuple[str, int, int, Optional[int]]]:
     """
-    Recupera tutti gli utenti dal db ordinati per:
-    1. Maggior numero di vittorie
-    2. Minor numero di turni impiegati per vincere
-    Restituisce una lista di tuple (username, partite_giocate, partite_vinte, record_turni)
+    Recupera tutti gli utenti ordinati per:
+    1. Numero di vittorie decrescente
+    2. Record di giri per vincere crescente (COALESCE sposta i NULL in fondo)
+    Restituisce: [(username, partite_giocate, partite_vinte, record_turni), ...]
     """
     with closing(connetti()) as conn:
-        # crea connessione tra py e db
         cursor = conn.cursor()
-        # puntatore che viaggia nel db per eseguire operazioni e riportare i risultati
         cursor.execute(
             '''
             SELECT username, partite_giocate, partite_vinte, record_turni
@@ -302,13 +309,12 @@ def ottieni_highscore() -> List[Tuple[str, int, int, Optional[int]]]:
             ORDER BY partite_vinte DESC, COALESCE(record_turni, 999999) ASC
             '''
         )
-        # l'ordine scritto in linguaggio SQL
-        # COALESCE = trasforma i valori NULL in 999999 per metterli ultimi in posizione
         return cursor.fetchall()
+
 
 def ottieni_storico_partite(limite: int = 20) -> List[Tuple[int, str, str, int]]:
     """
-     Restituisce le ultime `limite` partite concluse:
+    Restituisce le ultime 'limite' partite concluse dalla piu' recente:
     [(id, data_ora, vincitore, turni_totali), ...]
     """
     with closing(connetti()) as conn:
@@ -327,7 +333,7 @@ def ottieni_storico_partite(limite: int = 20) -> List[Tuple[int, str, str, int]]
 
 def ottieni_eventi_partita(partita_id: int) -> List[Tuple[int, int, str]]:
     """
-    Restituisce tutti gli eventi di una specifica partita ordinati cronologicamente:
+    Restituisce tutti gli eventi di una specifica partita in ordine cronologico:
     [(indice_evento, giro, descrizione), ...]
     """
     with closing(connetti()) as conn:

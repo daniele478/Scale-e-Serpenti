@@ -2,9 +2,10 @@ import math
 import random
 import pygame
 
+# cache globale dei font caricati per evitare di ricrearli a ogni frame
 _FONT_CACHE: dict[tuple[str, int, bool], pygame.font.Font] = {}
 
-# CONFIGURAZIONE
+# COSTANTI DI CONFIGURAZIONE 
 MARGINE = 25
 DIM_CELLA = 60
 DIM_TABELLONE = DIM_CELLA *10   
@@ -27,7 +28,7 @@ COLORE_BOTTONE = (41,128,185)
 COLORE_BOTTONE_CLICCABILE = (31,97,141)     
 COLORE_BOTTONE_DISABILITATO = (165,175,185) #NON CLICCABILE
 
-# Mappa colori
+# Mappa colori -> Tuple RGB
 MAPPA_COLORI ={
     "rosso": (220,53,69),
     "rossa": (220,53,69),
@@ -41,6 +42,13 @@ MAPPA_COLORI ={
     "marrone": (139, 90, 43),
     "rosa": (232, 62, 140),
 }
+
+def get_font(nome: str, dimensione: int, bold: bool = False) -> pygame.font.Font:
+    #Restituisce un font di sistema dalla cache, creandolo solo al primo utilizzo
+    chiave = (nome, dimensione, bold)
+    if chiave not in _FONT_CACHE:
+        _FONT_CACHE[chiave] = pygame.font.SysFont(nome, dimensione, bold=bold)
+    return _FONT_CACHE[chiave]
 
 def traduci_colore(nome_colore, default=(100,100,100)) -> tuple[int,int,int]:
     #Converte una stringa colore in una tupla RGB valida per Pygame
@@ -56,12 +64,12 @@ def traduci_colore(nome_colore, default=(100,100,100)) -> tuple[int,int,int]:
         return default
     return default
 
-#LETTURA DELLO STATO DELLA PARTITA
-#La classe Partita (Classi.py) espone lo stato tramite getter, mentre gli
-#oggetti interni restano negli attributi privati (_tabellone, _giocatori, _dado).
-#Questi helper provano prima il getter pubblico e poi l'attributo privato,
-#cosi' la grafica non dipende da un nome specifico e non va in AttributeError.
+# Helper di accesso disaccoppiato allo stato della partita
 def _risolvi_risorsa(oggetto, nomi_getter, nomi_attributi, etichetta):
+    """
+    Recupera una risorsa provando prima i metodi getter pubblici e poi gli attributi
+    interni, mantenendo la grafica disaccoppiata dai dettagli implementativi di Classi.py
+    """
     for nome in nomi_getter:
         metodo = getattr(oggetto, nome, None)
         if callable(metodo):
@@ -139,7 +147,7 @@ def casella_a_pixel(n:int) -> tuple[int, int]:
 
 #DISEGNO TABELLONE
 def disegna_scala_o_serpente(superficie: pygame.Surface, p1: tuple[int, int], p2: tuple[int,int], tipo: str, rgb: tuple[int,int,int]):
-    #Disegna scalao serpente
+    #Disegna scala o serpente
     x1, y1 = p1             #partenza
     x2, y2 = p2             #arrivo
     dx = x2 - x1            #orizzontale
@@ -155,9 +163,9 @@ def disegna_scala_o_serpente(superficie: pygame.Surface, p1: tuple[int, int], p2
    #SCALA
     if "scala" in tipo_norm:
         spessore = 7
-        #prima parte scala
+        #primo bastone scala
         pygame.draw.line(superficie, rgb, (int(x1 - nx * spessore), int(y1 - ny * spessore)), (int(x2 - nx * spessore), int(y2 - ny * spessore)), 4)
-        #seconda parte scala
+        #secondo bastone scala
         pygame.draw.line(superficie, rgb, (int(x1 + nx * spessore), int(y1 + ny * spessore)), (int(x2 + nx * spessore), int(y2 + ny * spessore)), 4)
         #calcola quanti pioli disegnare
         num_pioli = max(3, int(lunghezza // 20)) 
@@ -310,7 +318,6 @@ def disegna_pedine(screen: pygame.Surface, partita):
             #Somma lo spostamento (ox, oy) al centro della casella (cx, cy) e converte in numeri interi
             px, py = int(cx + ox), int(cy + oy)
             #Salva il raggio originale del giocatore
-            #(Giocatore lo tiene in _raggio: l'attributo pubblico "raggio" non esiste)
             raggio_orig = estrai_raggio_giocatore(giocatore)
             nome_attr_raggio = "_raggio" if hasattr(giocatore, "_raggio") else "raggio"
             rimpicciolito = raggio_orig is not None and len(giocatori) > 10
@@ -400,12 +407,6 @@ def spezza_testo(testo: str, font: pygame.font.Font, max_larghezza: int) -> list
     #Restituisce la lista delle righe pronte
     return righe
 
-def get_font(nome: str, dimensione: int, bold: bool = False) -> pygame.font.Font:
-    chiave = (nome, dimensione, bold)
-    if chiave not in _FONT_CACHE:
-        _FONT_CACHE[chiave] = pygame.font.SysFont(nome, dimensione, bold=bold)
-    return _FONT_CACHE[chiave]
-
 def disegna_pannello(
     screen: pygame.Surface,
     partita,
@@ -442,7 +443,6 @@ def disegna_pannello(
     #INFORMAZIONI SUL GIOCATORE DI TURNO (O VINCITORE)
     #Coordinata di partenza
     y_curr = rect_pannello.y + 78
-    #Traduce in RGB il colore della pedina attuale (get_colore, non "colore")
     colore_g = traduci_colore(
         giocatore_turno.get_colore()
         if hasattr(giocatore_turno, "get_colore")
@@ -494,10 +494,6 @@ def disegna_pannello(
             if y_log < rect_pannello.bottom - 18:
                 screen.blit(font_log.render(r, True, COLORE_TESTO), (x0, y_log))
                 y_log += 18
-
-# NOTA: la vecchia funzione mostra_vincitore() (banner con solo "Vince X!")
-# e' stata rimossa: il podio a schermo intero di disegna_podio() la sostituisce.
-# Tenerla qui sarebbe stato codice morto e fonte di confusione.
 
 #FUNZIONE PRINCIPALE
 def avvia_partita_grafica(partita) -> int:
@@ -752,10 +748,6 @@ def disegna_podio(
         surf_nome = font_nome.render(nome, True, COLORE_TESTO)
         screen.blit(surf_nome, surf_nome.get_rect(center=(rect.centerx, rect.top - 18)))
 
-        # Pedina del giocatore subito sopra il nome.
-        # ATTENZIONE: Giocatore non ha un attributo pubblico "colore" (il campo
-        # interno e' _colore e si legge con get_colore()). Usare getattr(..., "colore")
-        # faceva cadere sempre sul default "blu", rendendo tutte le pedine blu.
         colore_g = traduci_colore(estrai_colore_giocatore(giocatore, default="blu"))
         pygame.draw.circle(screen, colore_g, (rect.centerx, rect.top - 48), 16)
         pygame.draw.circle(screen, (20, 20, 20), (rect.centerx, rect.top - 48), 16, 2)

@@ -24,7 +24,7 @@ def genera_colori(n: int) -> list[tuple[int, int, int]]:
 
 
 def mostra_highscore() -> None:
-    """Recupera i dati dal database e li stampa in formato tabella."""
+    """Recupera i dati dal database e li stampa in formato tabella (classifica)."""
     print("\n" + "=" * 55)
     print(" CLASSIFICA ")
     print("=" * 55)
@@ -38,12 +38,13 @@ def mostra_highscore() -> None:
         print(f"{'UTENTE':<15} | {'GIOCATE':<8} | {'VINTE':<8} | {'RECORD GIRI':<12}")
         print("-" * 55)
         for utente, giocate, vinte, record in classifica:
+            #ostra "-" se l'utente ha giocato ma non ha mai vinto
             testo_record = str(record) if (vinte > 0 and record is not None) else "-"
             print(f"{utente:<15} | {giocate:<8} | {vinte:<8} | {testo_record:<12}")
     print("=" * 55 + "\n")
 
 def mostra_storico_partite() -> None:
-    """Mostra l'elenco delle partite concluse e permette di ispezionare gli eventi di una partita."""
+    """Mostra l'elenco delle partite concluse e permette di ispezionare gli eventi di un giocatore con ID"""
     while True:
         partite = ottieni_storico_partite()
         print("\n" + "=" * 65)
@@ -57,6 +58,7 @@ def mostra_storico_partite() -> None:
 
         print(f"{'ID':<5} | {'DATA E ORA':<20} | {'VINCITORE':<15} | {'GIRI':<6}")
         print("-" * 65)
+        # Set degli ID presenti in tabella per validare la scelta dell'utente
         id_validi = set()
         for pid, data_ora, vincitore, turni in partite:
             id_validi.add(pid)
@@ -66,6 +68,7 @@ def mostra_storico_partite() -> None:
         scelta = input("Inserisci ID partita per vedere i dettagli (oppure Invio per tornare): ").strip()
         if not scelta:
             return
+        #Controllo lunghezza e cifre prima del cast a int per evitare input sbagliati
         if len(scelta) > 8 or not scelta.isdigit() or int(scelta) not in id_validi:
             print("ID partita non valido.")
             continue
@@ -80,10 +83,12 @@ def mostra_storico_partite() -> None:
                 print(f"[{indice:03d}] Giro {giro}: {descrizione}")
         input("\nPremi Invio per tornare allo storico...")
 
+#Autenticazione e Configurazione della partita
 def autentica_giocatore_umano(numero_giocatore: int, utenti_loggati: list[str]) -> str:
     """
     Gestisce il ciclo di login o registrazione per un player umano.
-    Restituisce lo username canonico quando l'autenticazione riesce.
+    Restituisce l'username canonico quando l'autenticazione riesce.
+    Impedisce allo stesso utente di accedere due volte nella stessa partita
     """
     while True:
         print(f"\n--- Autenticazione Player {numero_giocatore} ---")
@@ -104,11 +109,11 @@ def autentica_giocatore_umano(numero_giocatore: int, utenti_loggati: list[str]) 
             print(f"Errore: {e}")
             continue
 
-        # Controllo 2: duplice accesso nella stessa partita (case-insensitive)
+        # Controllo 2: evita duplice accesso nella stessa partita (case-insensitive)
         if any(u.lower() == username.lower() for u in utenti_loggati):
             print(f"L'utente '{username}' ha gia' effettuato il login.")
             continue
-
+        #Login
         if scelta == "1":
             username_canonico = verifica_login(username, password)
             if username_canonico:
@@ -116,7 +121,7 @@ def autentica_giocatore_umano(numero_giocatore: int, utenti_loggati: list[str]) 
                 return username_canonico
             else:
                 print("Credenziali errate o utente inesistente.")
-
+        #Registrazione
         elif scelta == "2":
             if registra_utente(username, password):
                 print(f"Registrazione completata. Benvenuto/a {username}!")
@@ -126,9 +131,15 @@ def autentica_giocatore_umano(numero_giocatore: int, utenti_loggati: list[str]) 
 
 
 def configura_partita() -> Partita:
-    """Chiede numero di giocatori/umani, autentica i player e crea la Partita."""
+    """
+    Guida l'utente nella configurazione della partita:
+    1. Richiede il numero dei partecipanti (2-26) e quanti umani (minimo 1)
+    2. Autentica i giocatori umani e istanzia i bot
+    3. Genera un tabellone casuale con scale e serpenti 
+    """
     print("\nBenvenuto in Scale e Serpenti\n")
 
+    #Numero totale partecipanti (min 2, max 26)
     tot_giocatori = 0
     while tot_giocatori < 2 or tot_giocatori > 26:
         valore = input("Inserisci il numero di giocatori (2-26): ").strip()
@@ -142,6 +153,7 @@ def configura_partita() -> Partita:
         except ValueError:
             print("Input non valido. Inserisci un numero intero tra 2 e 26.")
 
+    #Numero di giocatori umani ( almeno 1 )
     umani = -1
     while umani < 1 or umani > tot_giocatori:
         valore = input(f"Inserisci il numero di giocatori umani (1-{tot_giocatori}): ").strip()
@@ -155,6 +167,7 @@ def configura_partita() -> Partita:
         except ValueError:
             print("Input non valido. Inserisci un numero intero.")
 
+    #Istanziazione umani (login/registrazione) e bot (automatico)
     num_bot = tot_giocatori - umani
     giocatori = []
     colori_disponibili = genera_colori(tot_giocatori)
@@ -172,11 +185,13 @@ def configura_partita() -> Partita:
         giocatori.append(GiocatoreBot(nome=nome_bot, colore=colore))
         print(f"Creato automaticamente {nome_bot}.")
 
+    #Creazione componenti motore di gioco
     dati_tabellone = genera_collegamenti_casuali()
     tabellone = Tabellone(dati_tabellone)
     dado = Dado()
     return Partita(giocatori, tabellone, dado)
 
+#NAVIGAZIONE MENU
 def chiedi_azione_menu() -> str:
     """Mostra il menu principale e restituisce la scelta valida ('1', '2', '3' o '4')."""
     while True:

@@ -31,6 +31,7 @@ def pulisci_testo(testo) -> str:
     return testo.encode("latin-1", "ignore").decode("latin-1")          #setaccia la parola e toglie il carattere. [c][i][t][t][a]['] -> butta '
                                                                         #ignore elimina emoji e simboli non supportati
 
+#GENERAZIONE DEL REPORT PDF
 def genera_report_pdf(classifica: list, registro_eventi: list[str], giri_totali: int) -> str:
     """
     Genera il report PDF di fine partita. 
@@ -40,7 +41,7 @@ def genera_report_pdf(classifica: list, registro_eventi: list[str], giri_totali:
     cartella = os.path.join(os.path.dirname(os.path.abspath(__file__)), CARTELLA_REPORT)
     os.makedirs(cartella, exist_ok=True)
 
-    # Nome basato su timestamp (con contatore per evitare sovrascritture)
+    # Genera il nome file con timestamp (con contatore per evitare sovrascritture)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     percorso = os.path.join(cartella, f"report_partita_{timestamp}.pdf")
     contatore = 1
@@ -48,7 +49,7 @@ def genera_report_pdf(classifica: list, registro_eventi: list[str], giri_totali:
         percorso = os.path.join(cartella, f"report_partita_{timestamp}_{contatore}.pdf")
         contatore += 1
 
-    # Documento
+    # Genera documento
     pdf = FPDF(orientation = "P", unit = "mm", format = "A4")
     pdf.set_auto_page_break(auto=True, margin=15) #salto pagina automatico
     pdf.set_title("Scale e Serpenti - Report partita")
@@ -105,6 +106,6 @@ def genera_report_pdf(classifica: list, registro_eventi: list[str], giri_totali:
             pdf.multi_cell(0, 6, f"{numero}. {testo}", new_x="LMARGIN", new_y="NEXT")
             pdf.ln(1)
 
-    # Salvataggio su disco
+    # Salvataggio del file PDF su disco
     pdf.output(percorso)
     return percorso
