@@ -18,7 +18,7 @@ class Dado:
     def get_facce(self):
         return self._facce
     def lancia(self):
-        # Estrae un numero casuale tra 1 e 6
+        # Estrae un numero casuale tra 1 e il numero di facce del dado
         return random.randint(1, self._facce)
     def __str__(self):
         return f"Dado da {self._facce} facce"
@@ -52,14 +52,14 @@ class Giocatore:
         return self._colore
     def get_posizione(self) -> int:             #Restituisce la casella sul tabellone
         return self._posizione
-    def is_bot(self) -> bool:                   #Restituisce True se il giocatoree e' CPU, False se Umano
+    def is_bot(self) -> bool:                   #Restituisce True se il giocatore e' CPU, False se Umano
         return self._is_bot
     
     #SETTER
     def muovi(self,passi: int) -> None:
         '''
-        Sposta il giocatore in un'altra casella. Inclusi monvimenti
-        di serpenti o scale. 
+        Sposta il giocatore in un'altra casella applicando la regola del rimbalzo.
+        Le scale e i serpenti sono applicati da Partita dopo il movimento.
         Regola del rimbalzo: se per esempio mi trovo sulla
         casella 97 e tiro 4 (101-100) rimbalzo alla casella 99
         '''
@@ -74,10 +74,6 @@ class Giocatore:
             self._posizione = nuova_pos
         return
     
-    def reset(self) -> None:
-    #Riporta il giocatore alla posizione di partenza (0)
-        self._posizione = 0
-
     #Disegno con pygame
     def disegna(self, superficie: "pygame.Surface", x: int, y: int) -> None:
         '''
@@ -102,7 +98,7 @@ class Giocatore:
         return self._posizione == 100
         
     def __str__(self) -> str:
-        #Restituiscce una descrizione testuale dello stato del giocatore
+        #Restituisce una descrizione testuale dello stato del giocatore
         return(f"Giocatore(nome='{self._nome}',"
                 f"colore={self._colore}, "
                 f"posizione={self._posizione}, "
@@ -126,7 +122,7 @@ class Tabellone:
     # Il Tabellone e' solo un MODELLO DATI: non conosce pixel ne' pygame.
     # _collegamenti ha la forma:
     #   { casella_partenza: (casella_arrivo, "scala" | "serpente", "Rossa" | ...) }
-    def __init__(self, collegamenti: dict = None):
+    def __init__(self, collegamenti: dict | None = None):
         self._righe = 10
         self._colonne = 10
         self._totale_caselle = 100
@@ -134,17 +130,14 @@ class Tabellone:
         self._collegamenti = collegamenti if collegamenti is not None else {}
 
         #GETTER
-    def get_totale_caselle(self) -> int:
-        #Restituisce il numero complessivo di caselle del tabellone
-        return self._totale_caselle
     def get_collegamenti(self) -> dict:
         #Restituisce il dizionario dei collegamenti (scale e serpenti)
         return self._collegamenti
         
-    def valuta_casella(self, posizione:int) -> tuple[bool,int,str,str]:
+    def valuta_casella(self, posizione:int) -> tuple[bool,int,str | None,str | None]:
         '''
         Controlla se su una casella inizia una scala o serpente
-        Restituisce: (trovato, nuova_posizone, tipo, colore)
+        Restituisce: (trovato, nuova_posizione, tipo, colore)
         '''     
         if posizione in self._collegamenti:     #Verifica se sulla casella c'è una scala o un serpente
                 nuova_pos, tipo, colore = self._collegamenti[posizione]
@@ -167,8 +160,8 @@ class Partita:
         self._giri_completati = 0       # Turno completato da tutti = 1 giro
         self._vincitore = None
         self._partita_finita = False
+        self._giro_vittoria = None      # Giro reale in cui è stata raggiunta la casella 100
         self._registro_eventi: list[tuple[int, str]] = []   # Lista di (giro, descrizione)
-        self._classifica_finale = []
         self._ultimo_lancio = None
 
     #GETTER
@@ -184,8 +177,13 @@ class Partita:
     def get_registro_eventi_dettagliato(self) -> list[tuple[int, str]]:
         #Restituisce le tuple (giro, descrizione) per il salvataggio su DB
         return list(self._registro_eventi)
-    def get_vincitore(self) -> Giocatore:
-        #Resituisce il giocatore vincitore
+    def get_ultimi_eventi(self, numero: int) -> list[str]:
+        #Restituisce solo gli ultimi eventi già formattati (per il pannello grafico)
+        if numero <= 0:
+            return []
+        return [f"[Giro {giro}] {desc}" for giro, desc in self._registro_eventi[-numero:]]
+    def get_vincitore(self) -> Giocatore | None:
+        #Restituisce il giocatore vincitore, None se la partita non è finita
         return self._vincitore
     def get_tabellone(self) -> Tabellone:
         return self._tabellone
@@ -195,12 +193,15 @@ class Partita:
     def get_dado(self) -> Dado:
         #Restituisce l'oggetto Dado utilizzato nella partita
         return self._dado
-    def get_ultimo_lancio(self) -> int:
-        #Restituisce il valore ottenuto nell'ultimo tiro
+    def get_ultimo_lancio(self) -> int | None:
+        #Restituisce il valore ottenuto nell'ultimo tiro, None se nessuno ha ancora tirato
         return self._ultimo_lancio
     def get_giri_completati(self) -> int:
         #Restituisce il numero di round completi (tutti hanno tirato)
         return self._giri_completati
+    def get_giro_vittoria(self) -> int | None:
+        #Restituisce il giro in cui è stata raggiunta la casella 100, None se non c'è vincitore
+        return self._giro_vittoria
     
     def esegui_turno(self) -> str:
         '''
@@ -233,7 +234,7 @@ class Partita:
         #2. Valutazione della casella: ci sono scale o serpenti?
         trovato, pos_finale, tipo, colore = self._tabellone.valuta_casella(pos_intermedia)
         if trovato:
-            # Apllica la differenza tra arrivo e partenza
+            # Applica la differenza tra arrivo e partenza
             scarto = pos_finale - pos_intermedia #calcolo spostamento
             giocatore.muovi(scarto)
             if tipo == "scala":
@@ -249,6 +250,7 @@ class Partita:
         if giocatore.vincitore():
             self._partita_finita = True
             self._vincitore = giocatore
+            self._giro_vittoria = giro_corrente
             self._registro_eventi.append((giro_corrente, f"!!!Vittoria!!! {giocatore.get_nome()} ha raggiunto la casella numero 100"))
         # Avanzamento al giocatore successivo
         self._indice_turno += 1
@@ -271,6 +273,5 @@ class Partita:
             self._giocatori,
             key=lambda giocatore: (-giocatore.get_posizione(), giocatore._id)
         )
-    #Reverse=True inverte l'ordine in modo che chi ha 100 finisce a indice 0, senno' sarebbe ultimo
-        self._classifica_finale = classifica
+        # -posizione ordina dal più alto al più basso; _id risolve i pareggi
         return classifica

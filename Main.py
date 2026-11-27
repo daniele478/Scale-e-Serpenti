@@ -48,12 +48,13 @@ def gioca_partita_cli(partita) -> None:
 def finalizza_partita(partita) -> None:
     """
     Gestisce tutte le operazioni post-partita:
-    1. Caclola e stampa podio finale
+    1. Calcola e stampa podio finale
     2. Aggiorna le statistiche dei giocatori umani nel database
     3. Salva lo storico della partita e i singoli eventi nel DB
     4. Genera il report PDF
     """
-    giri_giocati = partita.get_giri_completati()
+    # Il record usa il giro reale della vittoria, non i giri completi (la vittoria può arrivare a metà giro)
+    giro_vittoria = partita.get_giro_vittoria() or partita.get_giri_completati()
     classifica = partita.calcola_classifica()
     print(genera_podio(classifica))
     vincitore = partita.get_vincitore()
@@ -62,16 +63,16 @@ def finalizza_partita(partita) -> None:
     for giocatore in classifica:
         if not giocatore.is_bot():
             if giocatore == vincitore:
-                aggiorna_statistiche_vittoria(giocatore.get_nome(), giri_giocati)
+                aggiorna_statistiche_vittoria(giocatore.get_nome(), giro_vittoria)
             else:
                 aggiorna_statistiche_sconfitta(giocatore.get_nome())
     #Salva riepilogo partita ed eventi in SQLite
     registro = partita.get_registro_eventi()
-    salva_eventi(partita.get_registro_eventi_dettagliato(), vincitore.get_nome(), giri_giocati)
+    salva_eventi(partita.get_registro_eventi_dettagliato(), vincitore.get_nome(), giro_vittoria)
     print("\nDb Aggiornato: Applausi per il vincitore!!")
     #Esporta il verbale in PDF
     try:
-        percorso_pdf = genera_report_pdf(classifica, registro, giri_giocati)
+        percorso_pdf = genera_report_pdf(classifica, registro, giro_vittoria)
         print(f"\nReport PDF salvato in: {percorso_pdf}")
     except Exception as e:
         print(f"\nErrore durante la generazione del report PDF: {e}")
@@ -100,7 +101,7 @@ def main() -> None:
         partita = configura_partita()
         modalita = chiedi_modalita_gioco()
         print("\nIniziano i giochi, attenzione ai serpenti!\n")
-        #Impostzione grafica: consente l'esecuzione in CLI anche su ambienti in cui pygame non e' installato
+        #Impostazione grafica: consente l'esecuzione in CLI anche su ambienti in cui pygame non e' installato
         if modalita == "2":
             try:
                 from Grafica import avvia_partita_grafica
@@ -108,11 +109,15 @@ def main() -> None:
             except ImportError:
                 print("\nErrore: libreria 'pygame' non installata. Avvio in modalita' CLI...")
                 modalita = "1"
+            except Exception as errore:
+                #Display o risorse grafiche non disponibili: ripiega sulla CLI
+                print(f"\nErrore grafico ({errore}). Avvio in modalita' CLI...")
+                modalita = "1"
 
         if modalita == "1":
             gioca_partita_cli(partita)
 
-        # Se l'utente  ha chiuso la finestra o interrotto prima della fine
+        # Se l'utente ha chiuso la finestra o interrotto prima della fine
         # evita di salvare partite incomplete o generare report
         if not partita.is_finita():
             print("\nPartita interrotta prima del termine: nessun report generato.")

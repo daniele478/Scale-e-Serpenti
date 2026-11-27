@@ -9,7 +9,7 @@ _FONT_CACHE: dict[tuple[str, int, bool], pygame.font.Font] = {}
 MARGINE = 25
 DIM_CELLA = 60
 DIM_TABELLONE = DIM_CELLA *10   
-AREA_PARTENZA = 55
+AREA_PARTENZA = 80
 LARGHEZZA_PANNELLO = 340
 LARGHEZZA_FINESTRA = MARGINE * 3 + DIM_TABELLONE + LARGHEZZA_PANNELLO
 ALTEZZA_FINESTRA = MARGINE * 2 + DIM_TABELLONE + AREA_PARTENZA
@@ -123,8 +123,8 @@ def estrai_raggio_giocatore(giocatore):
 #CONVERSIONE CASELLA -> PIXEL
 def casella_a_pixel(n:int) -> tuple[int, int]:
     """
-    Restituisce le cordinate (x,y) del centro della casella.
-    Se n <= 0 restituisce il centro dell'area 'PARTENZA' sotto la casella n1.
+    Restituisce le coordinate (x,y) del centro della casella.
+    Se n <= 0 restituisce il centro dell'area 'PARTENZA' sotto il tabellone.
     """
     if n <= 0:
         #Area di partenza
@@ -143,7 +143,7 @@ def casella_a_pixel(n:int) -> tuple[int, int]:
     #parte dal margine, si sposta di tante celle (colonna*DIM_CELLA) + mezza cella per puntare al centro
     y = MARGINE + (9 - riga) * DIM_CELLA + DIM_CELLA / 2
     # in pygame l'asse cresce dall'alto 9-riga ribalta l'indice verticale
-    return int(x), int (y)
+    return int(x), int(y)
 
 #DISEGNO TABELLONE
 def disegna_scala_o_serpente(superficie: pygame.Surface, p1: tuple[int, int], p2: tuple[int,int], tipo: str, rgb: tuple[int,int,int]):
@@ -206,8 +206,8 @@ def crea_surface_tabellone(tabellone) -> pygame.Surface:
     surf = pygame.Surface((MARGINE * 2 + DIM_TABELLONE, ALTEZZA_FINESTRA))
     surf.fill(COLORE_SFONDO) #Lo colora
     #Prepara i due font di sistema
-    font_num = get_font("Helvetica", 13, bold=True)
-    font_label = get_font("Helvetica", 14, bold=True)
+    font_num = get_font("Arial", 13, bold=True)
+    font_label = get_font("Arial", 14, bold=True)
     #GRIGLIA
     for n in range(1,101):
         #ricava coordinate del centro della casella
@@ -281,7 +281,7 @@ def disegna_pedine(screen: pygame.Surface, partita):
     Raggruppa i giocatori per posizione e li dispone in cerchio
     intorno al centro se condividono la stessa casella.
     """
-    #Estra la lista giocatori (getter pubblico o attributo privato _giocatori)
+    #Estrae la lista giocatori (getter pubblico o attributo privato _giocatori)
     giocatori = estrai_giocatori(partita)
     #Crea diz vuoto che associa ogni casella alla lista dei giocatori presenti
     #es 0: [Giocatore1][Giocatore2][Giocatore3]
@@ -290,9 +290,10 @@ def disegna_pedine(screen: pygame.Surface, partita):
     for g in giocatori:
         # setdefault crea una lista vuota se la casella non è ancora nel dizionario, poi aggiunge il giocatore
         gruppi.setdefault(g.get_posizione(), []).append(g)
-    #Se ci sono più di 10 giocatori , rimpicciolisce le pedine 
+    #Se ci sono più di 10 giocatori, rimpicciolisce le pedine 
     #in modo che entrino, anche nell'area Partenza all'inizio del gioco
     raggio_ridotto = 8 if len(giocatori) > 10 else 11
+    raggio_partenza = 8   #raggio usato nell'area Partenza per restare dentro il box
     #Cicla su ogni casella occupata e sulla lista dei giocatori che ci stanno sopra
     for pos, lista_g in gruppi.items():
         #Calcola le coordinate del centro esatto di quella casella
@@ -308,8 +309,8 @@ def disegna_pedine(screen: pygame.Surface, partita):
                 #Caso B: ci sono 2 o più giocatori sulla stessa casella
             else:
                 #Sceglie il raggio del cerchio su cui disporre le pedine:
-                #13 px casella normale, 18 px nell'area Partenza
-                raggio_orbita = 13 if pos > 0 else 18
+                #13 px casella normale, 12 px nell'area Partenza
+                raggio_orbita = 13 if pos > 0 else 12
                 #Calcola l'angolo per dividere i 360° (2 * pi greco) in fette uguali tra tutti i giocatori
                 angolo = (2 * math.pi * idx) / tot           
                 #Converte l'angolo in spostamento orizzontale (coseno) e verticale (seno) rispetto al centro
@@ -320,12 +321,17 @@ def disegna_pedine(screen: pygame.Surface, partita):
             #Salva il raggio originale del giocatore
             raggio_orig = estrai_raggio_giocatore(giocatore)
             nome_attr_raggio = "_raggio" if hasattr(giocatore, "_raggio") else "raggio"
-            rimpicciolito = raggio_orig is not None and len(giocatori) > 10
-            #Se ci sono più di 10 giocatori, imposta temporaneamente il raggio ridotto
-            if rimpicciolito:
-                setattr(giocatore, nome_attr_raggio, raggio_ridotto)
+            #Riduce la pedina nell'area Partenza o quando ci sono più di 10 giocatori
+            raggio_temporaneo = None
+            if pos == 0:
+                raggio_temporaneo = raggio_partenza
+            elif len(giocatori) > 10:
+                raggio_temporaneo = raggio_ridotto
+            #Imposta temporaneamente il raggio ridotto
+            if raggio_temporaneo is not None and raggio_orig is not None:
+                setattr(giocatore, nome_attr_raggio, raggio_temporaneo)
             #Raggio effettivo da usare se il giocatore non ha un proprio disegna()
-            raggio_eff = raggio_ridotto if rimpicciolito else (raggio_orig or raggio_ridotto)
+            raggio_eff = raggio_temporaneo if raggio_temporaneo is not None else (raggio_orig or raggio_ridotto)
 
             #Se la classe Giocatore ha già il suo metodo disegna(), usa quello
             if hasattr(giocatore, "disegna"):
@@ -352,7 +358,7 @@ def disegna_dado(screen: pygame.Surface, rect: pygame.Rect, valore: int, in_anim
     cx, cy = rect.center
     #Calcola la distanza dal centro per posizionare i pallini laterali = off/offset = scostamento
     off = rect.width // 4
-    #Dizionario che mappa ogni faaccia alla lista delle coordinate (x,y) dei suoi pallini
+    #Dizionario che mappa ogni faccia alla lista delle coordinate (x,y) dei suoi pallini
     pallini = {
         #Faccia 1
         1: [(cx, cy)],
@@ -376,9 +382,14 @@ def disegna_dado(screen: pygame.Surface, rect: pygame.Rect, valore: int, in_anim
         for px, py in pallini[valore]:
             #Disegna ogni pallino
             pygame.draw.circle(screen, colore_pallino, (px, py), raggio_pallino)
+    else:
+        #Dado con più di 6 facce: stampa il valore al centro invece dei pallini
+        font_valore = get_font("Arial", 28, bold=True)
+        surf_valore = font_valore.render(str(valore), True, COLORE_TESTO)
+        screen.blit(surf_valore, surf_valore.get_rect(center=(cx, cy)))
 
 def spezza_testo(testo: str, font: pygame.font.Font, max_larghezza: int) -> list[str]:
-#Spezza una stringa lunga su più righe per adattarla alla larghezza del pannello
+    #Spezza una stringa lunga su più righe per adattarla alla larghezza del pannello
     #Rimuove eventuali caratteri speciali / emoji
     testo_pulito = testo.encode("latin-1", "ignore").decode("latin-1")
     #Divide la frase in una lista di singole parole
@@ -425,10 +436,10 @@ def disegna_pannello(
     #Disegna il bordo grigio-blu esterno del pannello
     pygame.draw.rect(screen, COLORE_BORDO, rect_pannello, 2, border_radius=12)
     #Prepara i 4 font con dimensioni e stili diversi 
-    font_titolo = get_font("Helvetica", 20, bold=True)  #Titolo principale
-    font_sub = get_font("Helvetica", 15, bold=True)     #Sottotitoli, turno e testo pulsante
-    font_testo = get_font("Helvetica", 14)              #Informazioni secondarie (giri, posizione)
-    font_log = get_font("Helvetica", 13)                #Cronologia eventi in piccolo
+    font_titolo = get_font("Arial", 20, bold=True)  #Titolo principale
+    font_sub = get_font("Arial", 15, bold=True)     #Sottotitoli, turno e testo pulsante
+    font_testo = get_font("Arial", 14)              #Informazioni secondarie (giri, posizione)
+    font_log = get_font("Arial", 13)                #Cronologia eventi in piccolo
    
     #Calcola il margine sinistro interno e la larghezza utile per il testo
     x0 = rect_pannello.x + 18
@@ -485,7 +496,7 @@ def disegna_pannello(
     screen.blit(font_sub.render("Ultimi eventi:", True, COLORE_TESTO), (x0, y_log))
     y_log += 24
     #Prende solo gli ultimi 6 eventi
-    ultimi_eventi = partita.get_registro_eventi()[-6:]
+    ultimi_eventi = partita.get_ultimi_eventi(6)
     for evento in ultimi_eventi:
         #Spezza l'evento in più righe se è più largo di larghezza_utile
         righe = spezza_testo(f"- {evento}", font_log, larghezza_utile)
@@ -503,6 +514,8 @@ def avvia_partita_grafica(partita) -> int:
     Restituisce il numero totale di giri completati
     """
     # INIZIALIZZAZIONE FINESTRA E RISORSE STATICHE
+    # I font non sopravvivono a pygame.quit(): svuota la cache a ogni nuova partita
+    _FONT_CACHE.clear()
     pygame.init()
     # Crea finestra principale
     screen = pygame.display.set_mode((LARGHEZZA_FINESTRA, ALTEZZA_FINESTRA))
@@ -515,8 +528,6 @@ def avvia_partita_grafica(partita) -> int:
     surface_tabellone = crea_surface_tabellone(tabellone)
 
     # DEFINIZIONE DEI RETTANGOLI DELL'INTERFACCIA
-    # Rettangolo che delimita la griglia a sinistra
-    rect_tabellone = pygame.Rect(MARGINE, MARGINE, DIM_TABELLONE, DIM_TABELLONE)
     # Coordinata X da cui inizia il pannello laterale dx
     pannello_x = MARGINE * 2 + DIM_TABELLONE
     # Rettangolo dell'intero pannello informativo sulla destra
@@ -651,6 +662,7 @@ def avvia_partita_grafica(partita) -> int:
 
     # CHIUSURA PULITA E RITORNO A MAIN.PY
     pygame.quit()
+    _FONT_CACHE.clear()
 
     # Restituisce il numero totale di giri a main.py per generare classifica, PDF e High Score
     return partita.get_giri_completati()
@@ -667,9 +679,9 @@ def disegna_podio(
         # Caso limite: nessun giocatore. Non c'e' nulla da disegnare ne' un pulsante da cliccare.
         return None
 
-    font_titolo = get_font("Helvetica", 32, bold=True)
-    font_medaglia = get_font("Helvetica", 24, bold=True)
-    font_info = get_font("Helvetica", 15)
+    font_titolo = get_font("Arial", 32, bold=True)
+    font_medaglia = get_font("Arial", 24, bold=True)
+    font_info = get_font("Arial", 15)
 
     # Titolo in alto
     t_titolo = font_titolo.render("CLASSIFICA FINALE", True, COLORE_TESTO)
@@ -728,16 +740,16 @@ def disegna_podio(
         surf_cas = font_info.render(f"Casella {giocatore.get_posizione()}", True, (40, 40, 40))
         screen.blit(surf_cas, surf_cas.get_rect(center=(rect.centerx, rect.bottom - 24)))
 
-        #Nome giocatore centrato sopra il bordo superiore del cubo + gestione nomi lunghi
+        # Nome giocatore centrato sopra il bordo superiore del cubo + gestione nomi lunghi
         nome = giocatore.get_nome()
         larghezza_max = larghezza_cubo - 12  # Margine laterale di sicurezza
 
         # 1) Prova a ridurre il font se il nome è troppo largo
         dim_font = 18
-        font_nome = get_font("Helvetica", dim_font, bold=True)
+        font_nome = get_font("Arial", dim_font, bold=True)
         while font_nome.size(nome)[0] > larghezza_max and dim_font > 13:
             dim_font -= 1
-            font_nome = get_font("Helvetica", dim_font, bold=True)
+            font_nome = get_font("Arial", dim_font, bold=True)
 
         # 2) Se supera la larghezza del cubo, tronca con "..."
         if font_nome.size(nome)[0] > larghezza_max:
@@ -755,7 +767,7 @@ def disegna_podio(
     # Eventuale riga "Voi altri" sotto la base del podio.
     # Uso un font dedicato piu' grande e in grassetto (rispetto a font_info,
     # usato per i testi secondari come "Casella N") per dare risalto alla frase.
-    font_altri = get_font("Helvetica", 22, bold=True)
+    font_altri = get_font("Arial", 22, bold=True)
     y_footer = y_base + 24
     if len(classifica) > 3:
         surf_altri = font_altri.render("Voi altri: i serpenti vi hanno preso", True, COLORE_TESTO_TENUE)
@@ -769,7 +781,7 @@ def disegna_podio(
     pygame.draw.rect(screen, COLORE_BOTTONE, rect_bottone_podio, border_radius=8)
     pygame.draw.rect(screen, COLORE_BORDO, rect_bottone_podio, 2, border_radius=8)
 
-    font_btn = get_font("Helvetica", 18, bold=True)
+    font_btn = get_font("Arial", 18, bold=True)
     t_btn = font_btn.render("Continua", True, (255, 255, 255))
     screen.blit(t_btn, t_btn.get_rect(center=rect_bottone_podio.center))
 

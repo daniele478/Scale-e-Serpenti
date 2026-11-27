@@ -1,3 +1,4 @@
+import getpass
 import random
 from Classi import Dado, Tabellone, Partita, GiocatoreUmano, GiocatoreBot
 from Funzioni import genera_collegamenti_casuali
@@ -38,13 +39,13 @@ def mostra_highscore() -> None:
         print(f"{'UTENTE':<15} | {'GIOCATE':<8} | {'VINTE':<8} | {'RECORD GIRI':<12}")
         print("-" * 55)
         for utente, giocate, vinte, record in classifica:
-            #ostra "-" se l'utente ha giocato ma non ha mai vinto
+            #Mostra "-" se l'utente ha giocato ma non ha mai vinto
             testo_record = str(record) if (vinte > 0 and record is not None) else "-"
             print(f"{utente:<15} | {giocate:<8} | {vinte:<8} | {testo_record:<12}")
     print("=" * 55 + "\n")
 
 def mostra_storico_partite() -> None:
-    """Mostra l'elenco delle partite concluse e permette di ispezionare gli eventi di un giocatore con ID"""
+    """Mostra l'elenco delle partite concluse e permette di ispezionare gli eventi di una partita tramite ID"""
     while True:
         partite = ottieni_storico_partite()
         print("\n" + "=" * 65)
@@ -60,9 +61,9 @@ def mostra_storico_partite() -> None:
         print("-" * 65)
         # Set degli ID presenti in tabella per validare la scelta dell'utente
         id_validi = set()
-        for pid, data_ora, vincitore, turni in partite:
+        for pid, data_ora, vincitore, giri in partite:
             id_validi.add(pid)
-            print(f"{pid:<5} | {data_ora:<20} | {vincitore:<15} | {turni:<6}")
+            print(f"{pid:<5} | {data_ora:<20} | {vincitore:<15} | {giri:<6}")
         print("=" * 65)
 
         scelta = input("Inserisci ID partita per vedere i dettagli (oppure Invio per tornare): ").strip()
@@ -100,7 +101,11 @@ def autentica_giocatore_umano(numero_giocatore: int, utenti_loggati: list[str]) 
             continue
 
         raw_username = input("Inserisci Username (3-16 caratteri, lettere/numeri/_/-): ")
-        raw_password = input("Inserisci Password (4-64 caratteri): ")
+        #getpass nasconde la password durante la digitazione
+        try:
+            raw_password = getpass.getpass("Inserisci Password (4-64 caratteri): ")
+        except (EOFError, OSError):
+            raw_password = input("Inserisci Password (4-64 caratteri): ")
 
         # Controllo 1: formato, lunghezza e caratteri ammessi
         try:
@@ -135,7 +140,7 @@ def configura_partita() -> Partita:
     Guida l'utente nella configurazione della partita:
     1. Richiede il numero dei partecipanti (2-26) e quanti umani (minimo 1)
     2. Autentica i giocatori umani e istanzia i bot
-    3. Genera un tabellone casuale con scale e serpenti 
+    3. Genera un tabellone casuale con scale e serpenti
     """
     print("\nBenvenuto in Scale e Serpenti\n")
 

@@ -28,11 +28,11 @@ def pulisci_testo(testo) -> str:
         testo = testo.replace(originale, sostituto)                     #scorre e rimpiazza
     testo = unicodedata.normalize("NFKD", testo)                        #scompone gli accenti
     testo = "".join(c for c in testo if not unicodedata.combining(c)) 
-    return testo.encode("latin-1", "ignore").decode("latin-1")          #setaccia la parola e toglie il carattere. [c][i][t][t][a]['] -> butta '
-                                                                        #ignore elimina emoji e simboli non supportati
+    #Converte in latin-1 scartando i caratteri non rappresentabili (es. emoji)
+    return testo.encode("latin-1", "ignore").decode("latin-1")
 
 #GENERAZIONE DEL REPORT PDF
-def genera_report_pdf(classifica: list, registro_eventi: list[str], giri_totali: int) -> str:
+def genera_report_pdf(classifica: list, registro_eventi: list[str], giro_vittoria: int) -> str:
     """
     Genera il report PDF di fine partita. 
     Restituisce il percorso assoluto del file salvato.
@@ -62,7 +62,7 @@ def genera_report_pdf(classifica: list, registro_eventi: list[str], giri_totali:
     pdf.set_font("Helvetica", "", 11)
     data_ora = datetime.now().strftime("%d/%m/%Y alle %H:%M")
     pdf.cell(0, 7, f"Report partita del {data_ora}", align="C", new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(0, 7, f"Giri totali giocati: {giri_totali}", align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 7, f"Giro della vittoria: {giro_vittoria}", align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(5)
 
     # CLASSIFICA FINALE

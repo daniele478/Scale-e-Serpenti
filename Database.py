@@ -64,10 +64,20 @@ def crea_tabelle() -> None:
                 indice_evento INTEGER NOT NULL,
                 giro INTEGER NOT NULL,
                 descrizione TEXT NOT NULL,
-                timestamp TEXT NOT NULL
+                timestamp TEXT NOT NULL,
+                FOREIGN KEY (partita_id) REFERENCES partite(id)
             )
             '''
         )
+
+        # CREATE TABLE IF NOT EXISTS non aggiorna una tabella già esistente:
+        # se lo schema è vecchio, avvisa subito invece di fallire a fine partita.
+        cursor.execute("PRAGMA table_info(registro_eventi)")
+        colonne = {riga[1] for riga in cursor.fetchall()}
+        if colonne and not {"indice_evento", "giro", "timestamp"}.issubset(colonne):
+            raise RuntimeError(
+                "Database obsoleto: elimina scale_serpenti.db e riavvia l'applicazione."
+            )
 
 # SICUREZZA PASSWORD E VALIDAZIONE CREDENZIALI
 def genera_hash(password: str) -> str:
@@ -133,9 +143,6 @@ def valida_credenziali(username: str, password: str) -> tuple[str, str]:
         raise ValueError(
             "Username non valido: usa 3-16 caratteri (solo lettere, numeri, '_' o '-')."
         )
-    if len(pass_pulita) < 4:
-        raise ValueError("Password non valida: deve contenere almeno 4 caratteri.")
-
     if not (4 <= len(pass_pulita) <= 64):
         raise ValueError("Password non valida: deve contenere tra 4 e 64 caratteri.")
 
@@ -148,7 +155,7 @@ def registra_utente(username: str, password: str) -> bool:
     Il controllo di unicita' e' case-insensitive ("Daniele" e "daniele" coincidono).
     Restituisce True se la registrazione riesce, False se l'username e' gia' in uso.
     """
-    user_pulito, pass_pulita, = valida_credenziali(username, password)
+    user_pulito, pass_pulita = valida_credenziali(username, password)
     try:
         with closing(connetti()) as conn, conn:
             cursor = conn.cursor()
@@ -181,7 +188,8 @@ def verifica_login(username: str, password: str) -> Optional[str]:
     """
     user_pulito = username.strip()
     pass_pulita = password.strip()
-    if not user_pulito or not pass_pulita:
+    # Limita la lunghezza prima di calcolare l'hash: nessuna password valida supera 64 caratteri
+    if not user_pulito or not pass_pulita or len(pass_pulita) > 64:
         return None
 
     with closing(connetti()) as conn, conn:
@@ -253,7 +261,7 @@ def aggiorna_statistiche_sconfitta(username: str) -> None:
             raise ValueError(f"Utente '{username}' non trovato nel database")
 
 
-def salva_eventi(eventi: list, vincitore: str, giri_totali: int) -> None:
+def salva_eventi(eventi: list, vincitore: str, giro_vittoria: int) -> None:
     """
     Salva in un'unica transazione il riepilogo della partita in 'partite'
     e tutti i singoli eventi cronologici in 'registro_eventi'.
@@ -273,7 +281,7 @@ def salva_eventi(eventi: list, vincitore: str, giri_totali: int) -> None:
             INSERT INTO partite (data_ora, vincitore, turni_totali)
             VALUES (?, ?, ?)
             """,
-            (data_ora, vincitore, giri_totali),
+            (data_ora, vincitore, giro_vittoria),
         )
         partita_id = cursor.lastrowid
 
